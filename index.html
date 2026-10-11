@@ -1,0 +1,474 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#1f5a3a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="黒板カメラ">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="icon" href="icon-192.png">
+<title>黒板カメラ</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=BIZ+UDPGothic:wght@400;700&display=swap">
+<style>
+/* 1列のスマホ画面。上から 工事名 → 工種 → 測点 → 工程 と選び、下の大きいボタンで撮る */
+:root{
+  --bg:#f3f5f2; --panel:#ffffff; --fg:#1b211d; --muted:#5d6861; --line:#d5dbd6;
+  --board:#1f5a3a; --board-ink:#ffffff; --chip:#e8ede9; --chip-on:#1f5a3a; --chip-on-ink:#ffffff;
+  --done:#2f7d4f; --warn:#9a5b00;
+  --font:"BIZ UDPGothic","Hiragino Sans","Hiragino Kaku Gothic ProN","Yu Gothic UI","Meiryo","Noto Sans JP",sans-serif;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#121614; --panel:#1b211e; --fg:#e7ece8; --muted:#9aa69f; --line:#2f3833;
+  --board:#2f8a59; --board-ink:#ffffff; --chip:#252d29; --chip-on:#3a9b66; --chip-on-ink:#ffffff;
+  --done:#5fc489; --warn:#e3a54a; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#121614; --panel:#1b211e; --fg:#e7ece8; --muted:#9aa69f; --line:#2f3833;
+  --board:#2f8a59; --board-ink:#ffffff; --chip:#252d29; --chip-on:#3a9b66; --chip-on-ink:#ffffff;
+  --done:#5fc489; --warn:#e3a54a; color-scheme:dark}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{margin:0}
+body{background:var(--bg);color:var(--fg);font-family:var(--font);font-size:16px;line-height:1.5;-webkit-text-size-adjust:100%;padding-top:env(safe-area-inset-top,0px)}
+.wrap{max-width:560px;margin:0 auto;padding-inline:16px;padding-block:12px 170px;display:flex;flex-direction:column;gap:14px}
+header h1{font-size:22px;margin:0;letter-spacing:.02em}
+header p{margin:2px 0 0;color:var(--muted);font-size:13px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px;display:flex;flex-direction:column;gap:10px;min-width:0}
+.card h2{font-size:15px;margin:0;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+.card h2 small{font-weight:400;color:var(--muted);font-size:12px}
+label.f{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted)}
+input[type=text]{font:inherit;font-size:17px;color:var(--fg);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px 12px;min-height:48px;width:100%}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chips.scroll{flex-wrap:nowrap;overflow-x:auto;padding-bottom:4px;-webkit-overflow-scrolling:touch}
+.chip{font:inherit;font-size:16px;min-height:48px;padding:0 14px;border-radius:24px;border:1px solid var(--line);background:var(--chip);color:var(--fg);cursor:pointer;white-space:nowrap;display:inline-flex;align-items:center;gap:6px;-webkit-tap-highlight-color:transparent}
+.chip[aria-pressed="true"]{background:var(--chip-on);color:var(--chip-on-ink);border-color:var(--chip-on);font-weight:700}
+.chip:focus-visible,.btn:focus-visible,.shoot:focus-visible{outline:3px solid var(--warn);outline-offset:2px}
+.chip .ok{color:var(--done);font-weight:700}
+.chip[aria-pressed="true"] .ok{color:var(--chip-on-ink)}
+.chip.small{min-height:40px;font-size:14px}
+.kinds{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.kinds .chip{justify-content:flex-start;border-radius:10px}
+.kinds .code{font-size:12px;opacity:.75;min-width:1.2em}
+.preview{width:100%;height:auto;border-radius:8px;border:1px solid var(--line);display:block}
+.note{font-size:13px;color:var(--muted);margin:0}
+.bar{position:fixed;left:0;right:0;bottom:0;background:var(--panel);border-top:1px solid var(--line);padding:10px 16px calc(10px + env(safe-area-inset-bottom,0px));z-index:5}
+.bar .in{max-width:560px;margin:0 auto;display:flex;flex-direction:column;gap:8px}
+.next{font-size:14px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.next b{color:var(--fg)}
+.shoot{display:flex;align-items:center;justify-content:center;gap:10px;min-height:64px;border-radius:12px;background:var(--board);color:var(--board-ink);font-size:22px;font-weight:700;cursor:pointer;user-select:none;-webkit-user-select:none}
+.sub{display:flex;gap:8px}
+.btn{font:inherit;font-size:16px;min-height:48px;padding:0 16px;border-radius:10px;border:1px solid var(--line);background:var(--chip);color:var(--fg);cursor:pointer;display:inline-flex;align-items:center;justify-content:center;flex:1;text-align:center}
+.btn.primary{background:var(--board);color:var(--board-ink);border-color:var(--board);font-weight:700}
+.btn.big{min-height:60px;font-size:19px}
+.shots{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+.shots button{padding:0;border:1px solid var(--line);border-radius:6px;overflow:hidden;background:var(--chip);cursor:pointer;position:relative}
+.shots img{display:block;width:100%;aspect-ratio:4/3;object-fit:cover}
+.shots span{position:absolute;left:0;right:0;bottom:0;font-size:11px;background:rgba(0,0,0,.6);color:#fff;padding:2px 4px;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.shots .sent::after{content:"送った";position:absolute;top:3px;right:3px;font-size:11px;background:var(--done);color:#fff;border-radius:4px;padding:0 4px}
+.sheet{position:fixed;inset:0;background:var(--bg);overflow:auto;z-index:10;padding:calc(12px + env(safe-area-inset-top,0px)) 16px calc(24px + env(safe-area-inset-bottom,0px))}
+.sheet .in{max-width:560px;margin:0 auto;display:flex;flex-direction:column;gap:12px}
+.sheet img{width:100%;border-radius:8px;border:1px solid var(--line);-webkit-touch-callout:default}
+.meta{font-size:13px;color:var(--muted);word-break:break-all;margin:0}
+.msg{font-size:14px;margin:0;min-height:1.5em}
+.msg.good{color:var(--done)} .msg.bad{color:var(--warn)}
+.busy{position:fixed;inset:0;background:rgba(0,0,0,.45);color:#fff;display:flex;align-items:center;justify-content:center;font-size:18px;z-index:20}
+details summary{cursor:pointer;font-size:14px;color:var(--muted);min-height:40px;display:flex;align-items:center}
+.linkbox{font-size:13px;word-break:break-all;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px;user-select:all;-webkit-user-select:all}
+@media (prefers-reduced-motion: no-preference){.chip,.btn{transition:background .12s}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>黒板カメラ</h1>
+    <p>選んで撮ると、写真に黒板が入ります。「LINEへ送る」で LINE のアルバムやトークに上げてください。</p>
+  </header>
+
+  <section class="card" aria-labelledby="h-koji">
+    <h2 id="h-koji">工事名</h2>
+    <label class="f" for="koji">黒板の工事名
+      <input type="text" id="koji" autocomplete="off" placeholder="例：〇〇マンション大規模修繕工事">
+    </label>
+    <div class="chips" id="recent" role="group" aria-label="前に使った工事名"></div>
+  </section>
+
+  <section class="card" aria-labelledby="h-kind">
+    <h2 id="h-kind">工種</h2>
+    <div class="kinds" id="kinds"></div>
+  </section>
+
+  <section class="card" aria-labelledby="h-pos">
+    <h2 id="h-pos">測点 <small>選ばない所は空けてよい</small></h2>
+    <div class="chips" id="faces" role="group" aria-label="面"></div>
+    <div class="chips scroll" id="floors" role="group" aria-label="階"></div>
+    <div class="chips" id="parts" role="group" aria-label="部位"></div>
+    <label class="f" for="partFree">部位（一覧にない時はここに書く）
+      <input type="text" id="partFree" autocomplete="off">
+    </label>
+    <div id="kOnly" hidden>
+      <div class="chips" id="repairs" role="group" aria-label="補修項目"></div>
+      <label class="f" for="num" style="margin-top:10px">番号（調査結果図の番号。例 S-1-5）
+        <input type="text" id="num" autocomplete="off">
+      </label>
+    </div>
+  </section>
+
+  <section class="card" aria-labelledby="h-step">
+    <h2 id="h-step">工程 <small>撮ると次の工程へ進みます。✓ は撮った工程</small></h2>
+    <div class="chips" id="steps" role="group" aria-label="工程"></div>
+  </section>
+
+  <section class="card" aria-labelledby="h-prev">
+    <h2 id="h-prev">黒板の見本</h2>
+    <canvas id="prev" class="preview" width="800" height="600" aria-label="黒板の見本"></canvas>
+    <div class="chips" role="group" aria-label="黒板の位置">
+      <button type="button" class="chip small" data-corner="left">黒板を左下</button>
+      <button type="button" class="chip small" data-corner="right">黒板を右下</button>
+    </div>
+    <div class="chips" role="group" aria-label="黒板の大きさ">
+      <button type="button" class="chip small" data-size="S">黒板 小</button>
+      <button type="button" class="chip small" data-size="M">黒板 中</button>
+      <button type="button" class="chip small" data-size="L">黒板 大</button>
+    </div>
+  </section>
+
+  <section class="card" aria-labelledby="h-shots">
+    <h2 id="h-shots">撮った写真 <small id="shotCount">0枚</small></h2>
+    <div class="shots" id="shots"></div>
+    <p class="note" id="shotsEmpty">まだありません。下の「撮る」から撮ってください。</p>
+    <button type="button" class="btn primary" id="sendAll" hidden>まだ送っていない写真をまとめて LINE へ</button>
+    <p class="msg" id="allMsg"></p>
+    <p class="note">撮った写真はこの画面を閉じると消えます。閉じる前に LINE へ送ってください。</p>
+  </section>
+
+  <details class="card">
+    <summary>職人さんに渡す入口のリンクを作る</summary>
+    <p class="note">いま入っている工事名が、最初から入った状態で開くリンクです。LINE で職人さんに送ってください。</p>
+    <div class="linkbox" id="entryLink"></div>
+    <button type="button" class="btn" id="copyLink">リンクをコピー</button>
+    <p class="msg" id="copyMsg"></p>
+  </details>
+</div>
+
+<div class="bar">
+  <div class="in">
+    <div class="next" id="next"></div>
+    <label class="shoot" for="cam">撮る</label>
+    <input type="file" id="cam" accept="image/*" capture="environment" hidden>
+    <div class="sub">
+      <label class="btn" for="pick">写真から選ぶ</label>
+      <input type="file" id="pick" accept="image/*" hidden>
+    </div>
+  </div>
+</div>
+
+<div class="sheet" id="sheet" hidden role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
+  <div class="in">
+    <h2 id="sheetTitle" style="margin:0;font-size:18px">撮れました</h2>
+    <img id="sheetImg" alt="黒板入りの写真">
+    <p class="meta" id="sheetMeta"></p>
+    <button type="button" class="btn primary big" id="sendBtn">LINEへ送る</button>
+    <p class="msg" id="sendMsg"></p>
+    <div class="sub">
+      <button type="button" class="btn" id="retakeBtn">消して撮り直す</button>
+      <button type="button" class="btn" id="closeBtn">次を撮る</button>
+    </div>
+    <p class="note">「LINEへ送る」→ 出てきた画面で LINE を選ぶ（トークへ送る）か、「画像を保存」を選んでから LINE のアルバムに追加します。写真を長押しして保存してもかまいません。</p>
+  </div>
+</div>
+
+<div class="busy" id="busy" hidden>黒板を入れています…</div>
+
+<script>
+(function(){
+'use strict';
+
+/* ---------- 選ぶ物の一覧（過去の工事写真から作った案） ---------- */
+const KINDS = [
+  {c:'A',n:'仮設足場工事',steps:['施工前','組立中','組立完了','是正前','是正後','解体中','解体完了'],parts:['外壁足場','養生シート','朝顔','昇降階段','壁つなぎ','是正箇所']},
+  {c:'W',n:'洗浄作業',steps:['施工前','洗剤塗布','高圧水洗浄','施工後'],parts:['外壁タイル','外壁','共用廊下','階段・踊り場','屋上 平場','側溝・巾木','天井']},
+  {c:'K',n:'下地補修工事',steps:['施工前','カッター入れ','斫り','清掃','注入','目地詰め','樹脂モルタル充填','防錆処理','タイル張り','施工後'],parts:['外壁','バルコニー内壁','手摺壁','手摺天端','上裏','庇','梁・柱','タイル面'],
+   repairs:['ひび割れ補修0.3mm未満','ひび割れ補修0.3mm以上','モルタル浮き補修','欠損部補修','鉄筋爆裂補修','脆弱塗膜補修','タイル面 ひび割れ補修','タイル面 浮き補修','タイル面 目地材劣化部補修']},
+  {c:'S',n:'シーリング工事',steps:['施工前','撤去後','養生','プライマー塗布','シール材充填','ヘラ仕上げ','施工後'],parts:['建具廻り','外壁目地','外壁タイル目地','ベントキャップ廻り','ガラリ廻り','笠木','手摺根元','設備貫通部','PS扉廻り']},
+  {c:'T',n:'塗装工事',steps:['施工前','下塗り','中塗り','上塗り','肌合わせ','施工後'],parts:['外壁','上裏（軒天）','バルコニー天井','共用廊下天井','階段・踊り場','手摺壁内側','庇','ボーダー','巾木']},
+  {c:'F',n:'鉄部塗装工事',steps:['施工前','ケレン','錆止め','中塗り','上塗り','施工後'],parts:['手摺','鉄骨階段','玄関扉・枠','PS扉','メーターボックス扉','隔て板','竪樋','ゴミ置場扉','EV機械室扉']},
+  {c:'B',n:'防水工事',steps:['施工前','ケレン・清掃','プライマー塗布','1層目','2層目','トップコート','施工後'],parts:['屋上 平場','屋上 立上り','笠木','バルコニー床','廊下・階段床','庇天端','側溝・巾木','ドレン廻り']},
+  {c:'Z',n:'その他工事',steps:['施工前','施工中','施工後'],parts:[]}
+];
+const FACES = ['北面','南面','東面','西面','屋上','共用部','内部'];
+const FLOORS = ['1階','2階','3階','4階','5階','6階','7階','8階','9階','10階','11階','12階','屋上','全体'];
+
+/* ---------- 状態（この端末に覚えておく） ---------- */
+const KEY = 'kokuban-camera-v2';
+let st = {koji:'', recent:[], kind:'S', face:'', floor:'', part:'', partFree:'', repair:'', num:'', step:0, corner:'right', size:'M'};
+const SIZE = {S:0.75, M:1, L:1.3};   // 黒板の大きさ（中＝写真の短い辺の約4割の高さ）
+try { const s = JSON.parse(localStorage.getItem(KEY) || 'null'); if (s && typeof s === 'object') st = Object.assign(st, s); } catch(e) {}
+if (!Array.isArray(st.recent)) st.recent = [];
+// 入口のリンク（#k=工事名）で開いたら、その工事名を入れる
+try {
+  const m = /[#&]k=([^&]*)/.exec(location.hash);
+  if (m) { const k = decodeURIComponent(m[1]).trim(); if (k) { st.koji = k; remember(k); } }
+} catch(e) {}
+function persist(){ try { localStorage.setItem(KEY, JSON.stringify(st)); } catch(e) {} }
+function remember(k){ if (!k) return; st.recent = [k].concat(st.recent.filter(x => x !== k)).slice(0, 5); }
+
+const shots = [];
+const takenSteps = {};
+const $ = id => document.getElementById(id);
+const kindOf = () => KINDS.find(k => k.c === st.kind) || KINDS[0];
+const partText = () => (st.partFree.trim() || st.part || '');
+const sokuten = () => [st.face, st.floor, partText()].filter(Boolean).join(' ');
+const posKey = () => st.kind + '|' + sokuten() + '|' + (st.kind === 'K' ? st.repair + '|' + st.num.trim() : '');
+
+/* ---------- 画面を組む ---------- */
+function chipBtn(text, on, onClick, extra, cls){
+  const b = document.createElement('button');
+  b.type = 'button'; b.className = 'chip' + (cls ? ' ' + cls : ''); b.setAttribute('aria-pressed', on ? 'true' : 'false');
+  if (extra) { const s = document.createElement('span'); s.className = 'ok'; s.textContent = extra; b.appendChild(s); }
+  b.appendChild(document.createTextNode(text));
+  b.addEventListener('click', onClick);
+  return b;
+}
+function fillChips(el, items, current, set){
+  el.replaceChildren(...items.map(v => chipBtn(v, v === current, () => { set(v === current ? '' : v); render(); })));
+}
+function render(){
+  const k = kindOf();
+  if (document.activeElement !== $('koji')) $('koji').value = st.koji;
+  if (document.activeElement !== $('partFree')) $('partFree').value = st.partFree;
+  if (document.activeElement !== $('num')) $('num').value = st.num;
+  $('recent').replaceChildren(...st.recent.filter(r => r !== st.koji).map(r => chipBtn(r, false, () => { st.koji = r; remember(r); render(); }, '', 'small')));
+  $('kinds').replaceChildren(...KINDS.map(x => {
+    const b = chipBtn('', x.c === st.kind, () => { if (st.kind !== x.c) { st.kind = x.c; st.part = ''; st.partFree = ''; st.repair = ''; st.num = ''; st.step = 0; } render(); });
+    b.textContent = '';
+    const c = document.createElement('span'); c.className = 'code'; c.textContent = x.c;
+    b.append(c, document.createTextNode(x.n));
+    return b;
+  }));
+  fillChips($('faces'), FACES, st.face, v => st.face = v);
+  fillChips($('floors'), FLOORS, st.floor, v => st.floor = v);
+  fillChips($('parts'), k.parts, st.part, v => { st.part = v; st.partFree = ''; });
+  $('parts').hidden = !k.parts.length;
+  $('kOnly').hidden = st.kind !== 'K';
+  if (st.kind === 'K') fillChips($('repairs'), k.repairs, st.repair, v => st.repair = v);
+  if (st.step >= k.steps.length) st.step = k.steps.length - 1;
+  const done = takenSteps[posKey()] || new Set();
+  $('steps').replaceChildren(...k.steps.map((s, i) => chipBtn(s, i === st.step, () => { st.step = i; render(); }, done.has(s) ? '✓' : '')));
+  document.querySelectorAll('[data-corner]').forEach(b => b.setAttribute('aria-pressed', b.dataset.corner === st.corner ? 'true' : 'false'));
+  document.querySelectorAll('[data-size]').forEach(b => b.setAttribute('aria-pressed', b.dataset.size === st.size ? 'true' : 'false'));
+  const nx = $('next'); nx.replaceChildren('次に撮る：');
+  const b = document.createElement('b');
+  b.textContent = [k.n, sokuten() || '（測点なし）', st.kind === 'K' ? [st.num.trim(), st.repair].filter(Boolean).join(' ') : '', k.steps[st.step]].filter(Boolean).join('｜');
+  nx.append(b);
+  $('entryLink').textContent = entryUrl();
+  persist();
+  drawPreview();
+}
+function entryUrl(){ return location.href.split('#')[0] + (st.koji.trim() ? '#k=' + encodeURIComponent(st.koji.trim()) : ''); }
+
+/* ---------- 黒板を描く ---------- */
+function pad(n){ return String(n).padStart(2, '0'); }
+function metaNow(){
+  const d = new Date(), k = kindOf();
+  return {
+    koji: st.koji.trim(), kc: k.c, kind: k.n, sokuten: sokuten(),
+    repair: st.kind === 'K' ? st.repair : '', num: st.kind === 'K' ? st.num.trim() : '',
+    step: k.steps[st.step],
+    date: d.getFullYear() + '.' + pad(d.getMonth()+1) + '.' + pad(d.getDate()),
+    time: pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds())
+  };
+}
+const FONT = '"BIZ UDPGothic","Hiragino Sans","Hiragino Kaku Gothic ProN","Yu Gothic","Meiryo","Noto Sans JP",sans-serif';
+function fit(ctx, text, maxW, size, weight){
+  let s = size;
+  do { ctx.font = (weight || 400) + ' ' + s + 'px ' + FONT; if (ctx.measureText(text).width <= maxW) break; s -= Math.max(1, s * 0.06); } while (s > 8);
+  return s;
+}
+function drawBoard(ctx, W, H, m, corner, size){
+  const u = Math.min(W, H) / 1200 * (SIZE[size] || 1);
+  const bw = Math.round(780*u), bh = Math.round(480*u), mg = Math.round(14*u);
+  const x = corner === 'left' ? mg : W - bw - mg, y = H - bh - mg;
+  const lw = Math.max(1, 3*u), rowH = 60*u, labW = 128*u;
+  ctx.save();
+  ctx.fillStyle = '#ffffff'; ctx.fillRect(x, y, bw, bh);
+  ctx.strokeStyle = '#111111'; ctx.lineWidth = lw * 1.4; ctx.strokeRect(x, y, bw, bh);
+  ctx.lineWidth = lw;
+  const rows = [['工事名', m.koji], ['工　種', m.kind], ['測　点', m.sokuten || '']];
+  ctx.fillStyle = '#111111'; ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+  rows.forEach((r, i) => {
+    const ry = y + rowH * i;
+    ctx.beginPath(); ctx.moveTo(x, ry + rowH); ctx.lineTo(x + bw, ry + rowH); ctx.stroke();
+    fit(ctx, r[0], labW - 16*u, 30*u, 700); ctx.fillText(r[0], x + 10*u, ry + rowH/2);
+    fit(ctx, r[1], bw - labW - 20*u, 34*u, 400); ctx.fillText(r[1], x + labW + 10*u, ry + rowH/2);
+  });
+  ctx.beginPath(); ctx.moveTo(x + labW, y); ctx.lineTo(x + labW, y + rowH*3); ctx.stroke();
+  // 下の欄：番号・補修項目・工程（大きく）・日付
+  const by = y + rowH*3, bh2 = bh - rowH*3;
+  const tw = bw - 32*u, cx = x + bw / 2;
+  const lines = [];
+  if (m.num) lines.push([m.num, 46*u, 700]);
+  if (m.repair) lines.push([m.repair, 40*u, 400]);
+  lines.push([m.step, (lines.length ? 72 : 92)*u, 700]);
+  ctx.textAlign = 'center';
+  const sizes = lines.map(l => fit(ctx, l[0], tw, l[1], l[2]) * 1.25);
+  const total = sizes.reduce((a, b) => a + b, 0);
+  let ty = by + (bh2 - 34*u - total) / 2;
+  lines.forEach((l, i) => { fit(ctx, l[0], tw, l[1], l[2]); ctx.fillText(l[0], cx, ty + sizes[i]/2); ty += sizes[i]; });
+  ctx.textAlign = 'left';
+  const foot = m.date + ' ' + m.time.slice(0, 5);
+  fit(ctx, foot, tw, 24*u, 400); ctx.fillStyle = '#333333'; ctx.fillText(foot, x + 16*u, y + bh - 20*u);
+  ctx.restore();
+}
+function drawPreview(){
+  const cv = $('prev'), ctx = cv.getContext('2d'), W = cv.width, H = cv.height;
+  const g = ctx.createLinearGradient(0, 0, W, H);
+  g.addColorStop(0, '#9aa39d'); g.addColorStop(1, '#6f7973');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  ctx.strokeStyle = 'rgba(255,255,255,.18)'; ctx.lineWidth = 2;
+  for (let yy = 0; yy < H; yy += 40) { ctx.beginPath(); ctx.moveTo(0, yy); ctx.lineTo(W, yy); ctx.stroke(); for (let xx = (yy/40 % 2) * 45; xx < W; xx += 90) { ctx.beginPath(); ctx.moveTo(xx, yy); ctx.lineTo(xx, yy + 40); ctx.stroke(); } }
+  ctx.fillStyle = 'rgba(255,255,255,.85)'; ctx.font = '700 22px ' + FONT; ctx.textBaseline = 'top'; ctx.textAlign = 'left';
+  ctx.fillText('（写真の見本）', 16, 14);
+  const m = metaNow(); if (!m.koji) m.koji = '（工事名を入れてください）';
+  drawBoard(ctx, W, H, m, st.corner, st.size);
+}
+
+/* ---------- 撮った写真に黒板を入れる ---------- */
+function loadImage(file){
+  return new Promise((res, rej) => {
+    const url = URL.createObjectURL(file), img = new Image();
+    img.onload = () => res({img, url}); img.onerror = () => { URL.revokeObjectURL(url); rej(new Error('写真を開けませんでした')); };
+    img.src = url;
+  });
+}
+function safe(s){ return String(s || '').replace(/[\\/:*?"<>|\s　]+/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, ''); }
+async function compose(file){
+  const m = metaNow();
+  const {img, url} = await loadImage(file);
+  const long = 1600, w0 = img.naturalWidth, h0 = img.naturalHeight;
+  const s = Math.min(1, long / Math.max(w0, h0));
+  const W = Math.round(w0 * s), H = Math.round(h0 * s);
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+  const ctx = cv.getContext('2d');
+  ctx.drawImage(img, 0, 0, W, H);
+  URL.revokeObjectURL(url);
+  drawBoard(ctx, W, H, m, st.corner, st.size);
+  const blob = await new Promise(r => cv.toBlob(r, 'image/jpeg', 0.88));
+  if (!blob) throw new Error('写真を作れませんでした');
+  const name = [m.date, m.koji, m.kind, m.sokuten, m.num, m.repair, m.step, m.time.replace(/:/g, '')].filter(Boolean).map(safe).join('_') + '.jpg';
+  return {blob, url: URL.createObjectURL(blob), meta: m, filename: name, sent: false, key: posKey()};
+}
+
+let current = null;
+async function onFile(ev){
+  const file = ev.target.files && ev.target.files[0];
+  ev.target.value = '';
+  if (!file) return;
+  if (!st.koji.trim()) { flash('先に工事名を入れてください。'); $('koji').focus(); return; }
+  $('busy').hidden = false;
+  try {
+    const shot = await compose(file);
+    shots.unshift(shot);
+    (takenSteps[shot.key] = takenSteps[shot.key] || new Set()).add(shot.meta.step);
+    remember(st.koji.trim());
+    const k = kindOf(); if (st.step < k.steps.length - 1) st.step++;
+    openSheet(shot);
+    renderShots(); render();
+  } catch(e) {
+    flash(e.message || '写真を作れませんでした。もう一度撮ってください。');
+  } finally { $('busy').hidden = true; }
+}
+function flash(t){ const n = $('next'); n.replaceChildren(); const b = document.createElement('b'); b.style.color = 'var(--warn)'; b.textContent = t; n.append(b); setTimeout(render, 4000); }
+
+function openSheet(shot){
+  current = shot;
+  $('sheetImg').src = shot.url;
+  $('sheetMeta').textContent = shot.filename;
+  setMsg($('sendMsg'), shot.sent ? '送りました。' : '', shot.sent);
+  $('sheetTitle').textContent = shot.sent ? '送った写真' : '撮れました';
+  $('sheet').hidden = false; $('sheet').scrollTop = 0;
+}
+function closeSheet(){ $('sheet').hidden = true; current = null; }
+function setMsg(el, t, good){ el.textContent = t; el.className = 'msg' + (t ? (good ? ' good' : ' bad') : ''); }
+
+/* ---------- LINE へ送る（スマホの共有の画面を出す） ---------- */
+async function send(list, msgEl){
+  if (!list.length) return;
+  const files = list.map(s => new File([s.blob], s.filename, {type: 'image/jpeg'}));
+  if (navigator.canShare && navigator.share && navigator.canShare({files})) {
+    try {
+      await navigator.share({files});
+      list.forEach(s => s.sent = true);
+      setMsg(msgEl, list.length > 1 ? list.length + '枚を渡しました。' : '渡しました。', true);
+    } catch(e) {
+      if (e && e.name === 'AbortError') setMsg(msgEl, 'やめました。', false);
+      else setMsg(msgEl, '共有の画面を出せませんでした。写真を長押しして保存してください。', false);
+    }
+  } else {
+    // 共有の画面が出せない機械（パソコンなど）は保存にする
+    list.forEach(s => { const a = document.createElement('a'); a.href = s.url; a.download = s.filename; document.body.appendChild(a); a.click(); a.remove(); s.sent = true; });
+    setMsg(msgEl, 'この機械では共有の画面が出せないので、保存しました。', true);
+  }
+  renderShots();
+}
+
+function retake(){
+  if (!current) return;
+  const i = shots.indexOf(current); if (i >= 0) shots.splice(i, 1);
+  const set = takenSteps[current.key]; if (set) set.delete(current.meta.step);
+  const k = KINDS.find(x => x.c === current.meta.kc);
+  if (k && current.key === posKey()) st.step = Math.max(0, k.steps.indexOf(current.meta.step));
+  URL.revokeObjectURL(current.url);
+  closeSheet(); renderShots(); render();
+  $('cam').click();
+}
+function renderShots(){
+  $('shotCount').textContent = shots.length + '枚';
+  $('shotsEmpty').hidden = shots.length > 0;
+  const unsent = shots.filter(s => !s.sent);
+  $('sendAll').hidden = unsent.length < 2;
+  $('sendAll').textContent = 'まだ送っていない ' + unsent.length + '枚をまとめて LINE へ';
+  $('shots').replaceChildren(...shots.map(s => {
+    const b = document.createElement('button'); b.type = 'button'; if (s.sent) b.className = 'sent';
+    const im = document.createElement('img'); im.src = s.url; im.alt = s.meta.step;
+    const sp = document.createElement('span'); sp.textContent = s.meta.step + ' ' + s.meta.sokuten;
+    b.append(im, sp); b.addEventListener('click', () => openSheet(s));
+    return b;
+  }));
+}
+
+/* ---------- つなぐ ---------- */
+$('koji').addEventListener('input', e => { st.koji = e.target.value; persist(); $('entryLink').textContent = entryUrl(); drawPreview(); });
+$('koji').addEventListener('change', () => { remember(st.koji.trim()); render(); });
+$('partFree').addEventListener('input', e => { st.partFree = e.target.value; if (st.partFree.trim()) st.part = ''; render(); });
+$('num').addEventListener('input', e => { st.num = e.target.value; render(); });
+document.querySelectorAll('[data-corner]').forEach(b => b.addEventListener('click', () => { st.corner = b.dataset.corner; render(); }));
+document.querySelectorAll('[data-size]').forEach(b => b.addEventListener('click', () => { st.size = b.dataset.size; render(); }));
+$('cam').addEventListener('change', onFile);
+$('pick').addEventListener('change', onFile);
+$('sendBtn').addEventListener('click', () => current && send([current], $('sendMsg')));
+$('sendAll').addEventListener('click', () => send(shots.filter(s => !s.sent).reverse(), $('allMsg')));
+$('closeBtn').addEventListener('click', closeSheet);
+$('retakeBtn').addEventListener('click', retake);
+$('copyLink').addEventListener('click', async () => {
+  try { await navigator.clipboard.writeText(entryUrl()); setMsg($('copyMsg'), 'コピーしました。LINE に貼って送ってください。', true); }
+  catch(e) { const r = document.createRange(); r.selectNodeContents($('entryLink')); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); setMsg($('copyMsg'), 'コピーできませんでした。リンクを長押ししてコピーしてください。', false); }
+});
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('sheet').hidden) closeSheet(); });
+window.addEventListener('beforeunload', e => { if (shots.some(s => !s.sent)) { e.preventDefault(); e.returnValue = ''; } });
+
+render(); renderShots();
+if (document.fonts && document.fonts.load) {
+  Promise.all([document.fonts.load('700 30px "BIZ UDPGothic"'), document.fonts.load('400 30px "BIZ UDPGothic"')]).then(drawPreview, () => {});
+}
+// 電波が無くても開けるようにする（https で置いた時だけ動く）
+if ('serviceWorker' in navigator && location.protocol === 'https:') {
+  navigator.serviceWorker.register('sw.js').catch(() => {});
+}
+})();
+</script>
+</body>
+</html>
