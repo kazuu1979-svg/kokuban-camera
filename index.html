@@ -160,7 +160,7 @@ details summary{cursor:pointer;font-size:14px;color:var(--muted);min-height:40px
     <p class="note" id="albumNote">工種・測点ごとに、撮った工程に色が付きます。<b style="color:var(--todo)">まだ</b>の工程は「続きを撮る」から撮れます。</p>
     <div class="sub">
       <button type="button" class="btn slim" id="selMode">選ぶ</button>
-      <button type="button" class="btn slim" id="sendUnsent">まだ送っていない写真を LINE へ</button>
+      <button type="button" class="btn slim" id="sendUnsent">まだ送っていない写真を LINE（グループ）へ</button>
       <button type="button" class="btn slim primary" id="openLedger">写真台帳（PDF）</button>
     </div>
     <div id="selBar" class="confirm" hidden>
@@ -266,6 +266,7 @@ details summary{cursor:pointer;font-size:14px;color:var(--muted);min-height:40px
     <div class="flash" id="flash"></div>
     <div class="camtop">
       <button type="button" class="pill" id="camClose">閉じる</button>
+      <button type="button" class="pill" id="camRot">向き：自動</button>
       <button type="button" class="pill" id="camTall">選ぶ所を小さく</button>
     </div>
     <div class="hint">黒板は指で動かせます</div>
@@ -323,7 +324,7 @@ details summary{cursor:pointer;font-size:14px;color:var(--muted);min-height:40px
       <div>この写真を消しますか？消すと元に戻せません。</div>
       <div class="sub"><button type="button" class="btn warn" id="delOneYes">消す</button><button type="button" class="btn" id="delOneNo">やめる</button></div>
     </div>
-    <p class="note">「LINEへ送る」→ 出てきた画面で LINE を選ぶ（トークへ送る）か、「画像を保存」を選んでから LINE のアルバムに追加します。写真を長押しして保存してもかまいません。</p>
+    <p class="note">グループに送る：「LINEへ送る」→ 出てきた画面で <b>LINE</b> → 送り先の一覧の <b>グループ</b> から選ぶ → <b>送信</b>。一度送ったグループは次から一覧の上に出ます。アルバムに入れたい時は、「画像を保存」を選んでから LINE のアルバムで追加します。</p>
   </div></div>
 </div>
 
@@ -373,7 +374,7 @@ const kindByCode = c => KINDS.find(k => k.c === c) || KINDS[KINDS.length - 1];
 
 /* ---------- 状態（この端末に覚えておく） ---------- */
 const KEY = 'kokuban-camera-v2';
-let st = {koji:'', recent:[], kind:'S', face:'', floor:'', part:'', partFree:'', repair:'', num:'', step:0, style:'white', pos:{fx:1, fy:1, s:1}, tall:false, camSmall:false};
+let st = {koji:'', recent:[], kind:'S', face:'', floor:'', part:'', partFree:'', repair:'', num:'', step:0, style:'white', pos:{fx:1, fy:1, s:1}, tall:false, camSmall:false, rotMode:'auto'};
 try { const s = JSON.parse(localStorage.getItem(KEY) || 'null'); if (s && typeof s === 'object') st = Object.assign(st, s); } catch(e) {}
 if (!Array.isArray(st.recent)) st.recent = [];
 if (!st.pos || typeof st.pos.fx !== 'number') st.pos = {fx: st.corner === 'left' ? 0 : 1, fy: 1, s: ({S:0.75, M:1, L:1.3})[st.size] || 1};
@@ -605,11 +606,79 @@ async function saveFromCanvas(baseCv, baseBlob, editOf){
   return rec;
 }
 
+/* ---------- 写真の向き（横に持ったら横の写真にする） ---------- */
+// r＝カメラの映像を何度まわすと、立てた向きの写真になるか（時計回り。0・90・-90・180）
+let physRot = 0, motionOn = false;
+const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const norm = a => { a = ((a % 360) + 360) % 360; return a > 180 ? a - 360 : a; };
+function screenAngle(){
+  if (screen.orientation && typeof screen.orientation.angle === 'number') return norm(screen.orientation.angle);
+  if (typeof window.orientation === 'number') return norm(window.orientation);
+  return 0;
+}
+function onMotion(e){
+  const g = e.accelerationIncludingGravity; if (!g || g.x == null || g.y == null) return;
+  let ax = g.x, ay = g.y; if (isIOS) { ax = -ax; ay = -ay; }
+  let r = physRot;
+  if (Math.abs(ay) > Math.abs(ax) + 2) r = ay > 0 ? 0 : 180;           // 縦に持っている
+  else if (Math.abs(ax) > Math.abs(ay) + 2) r = ax > 0 ? -90 : 90;     // 横に持っている（スマホの上が左／右）
+  if (r !== physRot) { physRot = r; if (camOn) drawOverlay(); }        // 床や天井に向けている時は前の向きのまま
+}
+async function startMotion(){
+  if (motionOn) return;
+  try {
+    if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
+      if (await DeviceMotionEvent.requestPermission() !== 'granted') return;
+    }
+    window.addEventListener('devicemotion', onMotion); motionOn = true;
+  } catch(e) {}
+}
+function stopMotion(){ if (motionOn) { window.removeEventListener('devicemotion', onMotion); motionOn = false; } }
+function camRot(){
+  const v = $('video'), wide = v.videoWidth > v.videoHeight;
+  if (st.rotMode === 'land') return wide ? 0 : -90;
+  if (st.rotMode === 'portrait') return wide ? 90 : 0;
+  return norm(physRot + screenAngle());
+}
+const turned = r => r === 90 || r === -90;
+// 写真の上の点 → 映像の上の点（黒板を映像に重ねて描く時）
+function setPhotoToFrame(ctx, r, W, H){
+  if (r === 90) ctx.setTransform(0, -1, 1, 0, 0, H);
+  else if (r === -90) ctx.setTransform(0, 1, -1, 0, W, 0);
+  else if (r === 180) ctx.setTransform(-1, 0, 0, -1, W, H);
+  else ctx.setTransform(1, 0, 0, 1, 0, 0);
+}
+// 映像の上の点 → 写真の上の点（黒板を指で動かす時）
+function frameToPhoto(p, r, W, H){
+  if (r === 90) return {x: H - p.y, y: p.x};
+  if (r === -90) return {x: p.y, y: W - p.x};
+  if (r === 180) return {x: W - p.x, y: H - p.y};
+  return p;
+}
+// 映像をまわして、立てた向きの写真にする
+function rotateCanvas(src, r){
+  if (!r) return src;
+  const W = src.width, H = src.height, cv = document.createElement('canvas');
+  cv.width = turned(r) ? H : W; cv.height = turned(r) ? W : H;
+  const c = cv.getContext('2d');
+  if (r === 90) c.setTransform(0, 1, -1, 0, H, 0);
+  else if (r === -90) c.setTransform(0, -1, 1, 0, 0, W);
+  else c.setTransform(-1, 0, 0, -1, W, H);
+  c.drawImage(src, 0, 0);
+  return cv;
+}
+function rotLabel(){
+  const v = $('video'), r = camRot();
+  const isLand = (turned(r) ? v.videoHeight : v.videoWidth) > (turned(r) ? v.videoWidth : v.videoHeight);   // できる写真が横長か
+  return st.rotMode === 'auto' ? '向き：自動（' + (isLand ? '横' : '縦') + '）' : st.rotMode === 'land' ? '向き：横' : '向き：縦';
+}
+
 /* ---------- カメラの画面 ---------- */
 let stream = null, camOn = false, camShots = 0, lastRec = null;
 async function openCamera(){
   if (!st.koji.trim()) { $('homeKoji').focus(); flashHome('先に工事名を入れてください。'); return; }
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { $('cam').click(); return; }
+  startMotion();   // iPhone はここで「動作と方向」の許可を聞く（押した時でないと聞けない）
   $('camScreen').hidden = false; document.body.classList.add('lock');
   $('cpanelIn').appendChild($('choices'));
   camOn = true; camShots = 0; $('camCount').textContent = '0'; $('lastShot').style.backgroundImage = '';
@@ -627,7 +696,7 @@ async function openCamera(){
 }
 function stopStream(){ if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; } $('video').srcObject = null; }
 function closeCamera(){
-  stopStream(); camOn = false;
+  stopStream(); stopMotion(); camOn = false;
   $('choicesHome').appendChild($('choices'));
   $('camScreen').hidden = true; document.body.classList.remove('lock');
   render(); renderAlbum();
@@ -644,9 +713,14 @@ function layoutOverlay(){
 }
 function drawOverlay(){
   const ov = $('ov'), c = ov.getContext('2d');
+  c.setTransform(1, 0, 0, 1, 0, 0);
   c.clearRect(0, 0, ov.width, ov.height);
   if (!ov.width) return;
-  drawBoard(c, ov.width, ov.height, boardMeta(), st.pos, st.style);
+  const r = camRot(), W = turned(r) ? ov.height : ov.width, H = turned(r) ? ov.width : ov.height;
+  setPhotoToFrame(c, r, ov.width, ov.height);
+  drawBoard(c, W, H, boardMeta(), st.pos, st.style);
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  $('camRot').textContent = rotLabel();
 }
 async function shoot(){
   if (!camOn || !stream) return;
@@ -654,7 +728,7 @@ async function shoot(){
   if (!v.videoWidth) return;
   const f = $('flash'); f.style.transition = 'none'; f.style.opacity = '0.8'; requestAnimationFrame(() => { f.style.transition = ''; f.style.opacity = '0'; });
   try {
-    const baseCv = scaledCanvas(v, v.videoWidth, v.videoHeight, 1600);
+    const baseCv = rotateCanvas(scaledCanvas(v, v.videoWidth, v.videoHeight, 1600), camRot());
     const baseBlob = await toBlob(baseCv, 0.9);
     const rec = await saveFromCanvas(baseCv, baseBlob, null);
     lastRec = rec; camShots++;
@@ -667,12 +741,14 @@ async function shoot(){
 (function(){
   const vf = $('vf'), pts = new Map();
   let drag = null, pinch = null;
-  const local = e => { const r = $('ov').getBoundingClientRect(); return {x: (e.clientX - r.left), y: (e.clientY - r.top)}; };
+  // 指の場所を「写真の上の場所」にする（横に持っている時はまわす）
+  const dims = () => { const r = camRot(); return {r, W: turned(r) ? ovBox.h : ovBox.w, H: turned(r) ? ovBox.w : ovBox.h}; };
+  const local = e => { const b = $('ov').getBoundingClientRect(), d = dims(); return frameToPhoto({x: e.clientX - b.left, y: e.clientY - b.top}, d.r, ovBox.w, ovBox.h); };
   vf.addEventListener('pointerdown', e => {
     if (e.target.closest('.camtop')) return;
     try { vf.setPointerCapture(e.pointerId); } catch(err) {} pts.set(e.pointerId, local(e));
     if (pts.size === 1) {
-      const p = local(e), r = boardRect(ovBox.w, ovBox.h, st.pos);
+      const p = local(e), d = dims(), r = boardRect(d.W, d.H, st.pos);
       drag = (p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h) ? {dx: p.x - r.x, dy: p.y - r.y} : null;
     } else if (pts.size === 2) {
       const a = [...pts.values()]; pinch = {d: Math.hypot(a[0].x - a[1].x, a[0].y - a[1].y), s: st.pos.s}; drag = null;
@@ -685,8 +761,8 @@ async function shoot(){
       const a = [...pts.values()], d = Math.hypot(a[0].x - a[1].x, a[0].y - a[1].y);
       st.pos.s = Math.min(2, Math.max(0.45, pinch.s * d / Math.max(1, pinch.d))); drawOverlay();
     } else if (drag && pts.size === 1) {
-      const p = local(e);
-      st.pos = posFromXY(ovBox.w, ovBox.h, p.x - drag.dx, p.y - drag.dy, st.pos.s); drawOverlay();
+      const p = local(e), d = dims();
+      st.pos = posFromXY(d.W, d.H, p.x - drag.dx, p.y - drag.dy, st.pos.s); drawOverlay();
     }
   });
   const up = e => { if (!pts.has(e.pointerId)) return; pts.delete(e.pointerId); if (pts.size < 2) pinch = null; if (!pts.size) { drag = null; render(); } };
@@ -1043,6 +1119,7 @@ document.querySelectorAll('[data-size]').forEach(b => b.addEventListener('click'
 document.querySelectorAll('[data-at]').forEach(b => b.addEventListener('click', () => { const a = {lb:[0,1], rb:[1,1], lt:[0,0], rt:[1,0]}[b.dataset.at]; st.pos.fx = a[0]; st.pos.fy = a[1]; render(); }));
 $('camOpen').addEventListener('click', openCamera);
 $('camClose').addEventListener('click', closeCamera);
+$('camRot').addEventListener('click', () => { st.rotMode = {auto: 'land', land: 'portrait', portrait: 'auto'}[st.rotMode] || 'auto'; persist(); drawOverlay(); });
 $('camTall').addEventListener('click', () => { st.camSmall = !st.camSmall; render(); requestAnimationFrame(() => { layoutOverlay(); drawOverlay(); }); });
 $('shutter').addEventListener('click', shoot);
 $('lastShot').addEventListener('click', () => { if (lastRec) openSheet(lastRec); });
