@@ -106,6 +106,15 @@ details summary{cursor:pointer;font-size:14px;color:var(--muted);min-height:40px
 .vf video{position:absolute;inset:0;width:100%;height:100%;object-fit:contain}
 .vf canvas{position:absolute;left:0;top:0;z-index:1}
 .ver{font-size:12px;color:var(--muted);font-weight:400;margin-left:6px}
+.inrow{display:flex;gap:8px;align-items:stretch}
+.inrow input{flex:1;min-width:0}
+.mic{font-size:22px;min-width:56px;border-radius:10px;border:1px solid var(--line);background:var(--chip);cursor:pointer}
+.mic.on{background:var(--warn);border-color:var(--warn)}
+.numrow{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:6px}
+.numlab{font-size:14px;color:var(--muted)}
+.nb{font:inherit;font-size:26px;font-weight:700;width:56px;height:56px;border-radius:28px;border:1px solid var(--line);background:var(--chip);color:var(--fg);cursor:pointer}
+.numview{font-size:26px;min-width:4.5em;text-align:center;font-variant-numeric:tabular-nums}
+.chip.mine{border-style:dashed}
 .vf .flash{position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none;transition:opacity .25s}
 .vf .camtop{position:absolute;left:8px;right:8px;top:calc(8px + env(safe-area-inset-top,0px));display:flex;gap:8px;justify-content:space-between;pointer-events:none}
 .vf .camtop *{pointer-events:auto}
@@ -221,14 +230,26 @@ details summary{cursor:pointer;font-size:14px;color:var(--muted);min-height:40px
         <div class="chips" id="faces" role="group" aria-label="面"></div>
         <div class="chips scroll" id="floors" role="group" aria-label="階"></div>
         <div class="chips" id="parts" role="group" aria-label="部位"></div>
-        <label class="f" for="partFree">部位（一覧にない時はここに書く）
+        <label class="f" for="partFree">部位（一覧にない時だけ。一度入れると次から上に並びます）</label>
+        <div class="inrow">
           <input type="text" id="partFree" autocomplete="off">
-        </label>
+          <button type="button" class="mic" id="micBtn" aria-label="声で入れる">🎤</button>
+        </div>
+        <p class="note" id="micNote" hidden></p>
         <div id="kOnly" hidden>
           <div class="chips" id="repairs" role="group" aria-label="補修項目"></div>
-          <label class="f" for="num" style="margin-top:10px">番号（調査結果図の番号。例 S-1-5）
-            <input type="text" id="num" autocomplete="off">
-          </label>
+          <div class="numrow" role="group" aria-label="番号">
+            <span class="numlab">番号</span>
+            <button type="button" class="nb" id="numMinus" aria-label="番号を1つ戻す">－</button>
+            <b class="numview" id="numView"></b>
+            <button type="button" class="nb" id="numPlus" aria-label="番号を1つ進める">＋</button>
+            <button type="button" class="chip small" id="numOff">番号なし</button>
+          </div>
+          <p class="note">面と階は上で選んだ物から自動で入ります（南面・5階・3番 → S-3-5）。「施工後」まで撮ると、番号が1つ進んで「施工前」に戻ります。</p>
+          <details>
+            <summary>番号を手で入れる</summary>
+            <input type="text" id="num" autocomplete="off" placeholder="例 S-1-5（入れると上の番号より優先）">
+          </details>
         </div>
       </section>
       <section class="card" aria-labelledby="h-step">
@@ -385,13 +406,18 @@ const kindByCode = c => KINDS.find(k => k.c === c) || KINDS[KINDS.length - 1];
 
 /* ---------- 状態（この端末に覚えておく） ---------- */
 const KEY = 'kokuban-camera-v2';
-let st = {koji:'', recent:[], kind:'S', face:'', floor:'', part:'', partFree:'', repair:'', num:'', step:0, style:'white', pos:{fx:1, fy:1, s:1}, tall:false, camSmall:false, rotMode:'auto'};
+let st = {koji:'', recent:[], kind:'S', face:'', floor:'', part:'', partFree:'', repair:'', num:'', step:0, style:'white', pos:{fx:1, fy:1, s:1}, tall:false, camSmall:false, rotMode:'auto', numN:1, numOn:true, myParts:{}, sites:[]};
 try { const s = JSON.parse(localStorage.getItem(KEY) || 'null'); if (s && typeof s === 'object') st = Object.assign(st, s); } catch(e) {}
 if (!Array.isArray(st.recent)) st.recent = [];
 if (!st.pos || typeof st.pos.fx !== 'number') st.pos = {fx: st.corner === 'left' ? 0 : 1, fy: 1, s: ({S:0.75, M:1, L:1.3})[st.size] || 1};
 try {
   const m = /[#&]k=([^&]*)/.exec(location.hash);
   if (m) { const k = decodeURIComponent(m[1]).trim(); if (k) { st.koji = k; remember(k); } }
+  // 現場の一覧をまとめて入れるリンク（#ks=名前|名前|…）。ページには現場名を書かず、リンクで渡す
+  const ks = /[#&]ks=([^&]*)/.exec(location.hash);
+  if (ks) { const list = decodeURIComponent(ks[1]).split('|').map(s => s.trim()).filter(Boolean); if (list.length) st.sites = list; }
+  if (!st.myParts || typeof st.myParts !== 'object') st.myParts = {};
+  if (!Array.isArray(st.sites)) st.sites = [];
 } catch(e) {}
 function persist(){ try { localStorage.setItem(KEY, JSON.stringify(st)); } catch(e) {} }
 function remember(k){ if (!k) return; st.recent = [k].concat(st.recent.filter(x => x !== k)).slice(0, 5); }
@@ -401,8 +427,17 @@ const kindOf = () => kindByCode(st.kind);
 const partText = () => (st.partFree.trim() || st.part || '');
 const sokuten = () => [st.face, st.floor, partText()].filter(Boolean).join(' ');
 const groupKeyOf = (kc, sk, num, repair) => kc + '|' + sk + '|' + (kc === 'K' ? (repair || '') + '|' + (num || '') : '');
-const posKey = () => groupKeyOf(st.kind, sokuten(), st.num.trim(), st.repair);
-const snapshotSel = () => ({kind: st.kind, face: st.face, floor: st.floor, part: st.part, partFree: st.partFree, repair: st.repair, num: st.num, step: st.step});
+// 番号（下地補修）：面の記号－番号－階。手で入れた物があればそれを使う
+const FACE_L = {'北面':'N', '南面':'S', '東面':'E', '西面':'W', '屋上':'R'};
+function floorCode(){ const m = /^(\d+)階$/.exec(st.floor || ''); return m ? m[1] : (st.floor === '屋上' ? 'R' : ''); }
+function numText(){
+  if (st.kind !== 'K') return '';
+  if (st.num.trim()) return st.num.trim();
+  if (!st.numOn) return '';
+  return [FACE_L[st.face] || '', String(st.numN || 1), floorCode()].filter(Boolean).join('-');
+}
+const posKey = () => groupKeyOf(st.kind, sokuten(), numText(), st.repair);
+const snapshotSel = () => ({kind: st.kind, face: st.face, floor: st.floor, part: st.part, partFree: st.partFree, repair: st.repair, num: st.num, numN: st.numN, numOn: st.numOn, step: st.step});
 
 /* ---------- 写真をスマホの中に残す（IndexedDB） ---------- */
 let photos = [];            // {id, koji, kc, kind, sokuten, num, repair, step, stepIdx, date, time, ts, sel, pos, style, blob, base, thumb, sent, filename}
@@ -447,7 +482,7 @@ function fillChips(el, items, current, set){
 }
 function summary(){
   const k = kindOf();
-  return [k.n, sokuten() || '（測点なし）', st.kind === 'K' ? [st.num.trim(), st.repair].filter(Boolean).join(' ') : '', k.steps[st.step]].filter(Boolean).join('｜');
+  return [k.n, sokuten() || '（測点なし）', st.kind === 'K' ? [numText(), st.repair].filter(Boolean).join(' ') : '', k.steps[st.step]].filter(Boolean).join('｜');
 }
 function doneSteps(key, koji){
   const s = new Set();
@@ -459,7 +494,7 @@ function render(){
   for (const id of ['koji', 'homeKoji']) if (document.activeElement !== $(id)) $(id).value = st.koji;
   if (document.activeElement !== $('partFree')) $('partFree').value = st.partFree;
   if (document.activeElement !== $('num')) $('num').value = st.num;
-  $('recent').replaceChildren(...st.recent.filter(r => r !== st.koji).map(r => chipBtn(r, false, () => { st.koji = r; remember(r); render(); renderAlbum(); }, '', 'small')));
+  $('recent').replaceChildren(...[...new Set([...st.sites, ...st.recent])].filter(r => r !== st.koji).map(r => chipBtn(r, false, () => { st.koji = r; remember(r); render(); renderAlbum(); }, '', 'small')));
   $('kinds').replaceChildren(...KINDS.map(x => {
     const b = chipBtn('', x.c === st.kind, () => { if (st.kind !== x.c) { st.kind = x.c; st.part = ''; st.partFree = ''; st.repair = ''; st.num = ''; st.step = 0; } render(); });
     b.textContent = '';
@@ -469,8 +504,13 @@ function render(){
   }));
   fillChips($('faces'), FACES, st.face, v => st.face = v);
   fillChips($('floors'), FLOORS, st.floor, v => st.floor = v);
-  fillChips($('parts'), k.parts, st.part, v => { st.part = v; st.partFree = ''; });
-  $('parts').hidden = !k.parts.length;
+  // 部位：前に自分で入れた部位（点線）を先に、そのあと決まりの一覧
+  const mine = st.myParts[st.kind] || [];
+  const partItems = [...mine, ...k.parts.filter(p => !mine.includes(p))];
+  $('parts').replaceChildren(...partItems.map(v => chipBtn(v, v === st.part, () => { st.part = v === st.part ? '' : v; st.partFree = ''; render(); }, '', mine.includes(v) ? 'mine' : '')));
+  $('parts').hidden = !partItems.length;
+  $('numView').textContent = numText() || '番号なし';
+  $('numOff').setAttribute('aria-pressed', !st.numOn && !st.num.trim() ? 'true' : 'false');
   $('kOnly').hidden = st.kind !== 'K';
   if (st.kind === 'K') fillChips($('repairs'), k.repairs, st.repair, v => st.repair = v);
   if (st.step >= k.steps.length) st.step = k.steps.length - 1;
@@ -506,7 +546,7 @@ function metaNow(){
   const d = new Date(), k = kindOf();
   return {
     koji: st.koji.trim(), kc: k.c, kind: k.n, sokuten: sokuten(),
-    repair: st.kind === 'K' ? st.repair : '', num: st.kind === 'K' ? st.num.trim() : '',
+    repair: st.kind === 'K' ? st.repair : '', num: numText(),
     step: k.steps[st.step], stepIdx: st.step,
     date: d.getFullYear() + '.' + pad(d.getMonth()+1) + '.' + pad(d.getDate()),
     time: pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds()), ts: d.getTime()
@@ -613,7 +653,14 @@ async function saveFromCanvas(baseCv, baseBlob, editOf){
   const ok = await idbPut(rec);
   if (!ok && idb) $('albumMsg').textContent = 'スマホの空きが少ないため、この写真は残せませんでした。LINE へ送ってから古い写真を消してください。';
   remember(m.koji);
-  if (!editOf) { const k = kindOf(); if (st.step < k.steps.length - 1) st.step++; }
+  // 手で入れた部位は覚えて、次から押すだけで選べるようにする
+  const pf = st.partFree.trim();
+  if (pf) { const a = st.myParts[st.kind] || []; st.myParts[st.kind] = [pf].concat(a.filter(x => x !== pf)).slice(0, 12); st.part = pf; st.partFree = ''; }
+  if (!editOf) {
+    const k = kindOf();
+    if (st.step < k.steps.length - 1) st.step++;
+    else if (st.kind === 'K' && !st.num.trim() && st.numOn) { st.numN = (st.numN || 1) + 1; st.step = 0; }   // 施工後まで撮ったら次の番号へ
+  }
   return rec;
 }
 
@@ -992,7 +1039,9 @@ function renderAlbum(){
     const nextIdx = k.steps.findIndex(s => !done.has(s));
     if (nextIdx >= 0) {
       const more = document.createElement('button'); more.type = 'button'; more.className = 'btn slim primary'; more.textContent = '続きを撮る（' + k.steps[nextIdx] + '）';
-      more.addEventListener('click', () => { const s0 = g.items[g.items.length - 1].sel || {}; Object.assign(st, {kind: g.kc, face: s0.face || '', floor: s0.floor || '', part: s0.part || '', partFree: s0.partFree || '', repair: g.repair || '', num: g.num || '', step: nextIdx}); render(); openCamera(); });
+      more.addEventListener('click', () => { const s0 = g.items[g.items.length - 1].sel || {}; Object.assign(st, {kind: g.kc, face: s0.face || '', floor: s0.floor || '', part: s0.part || s0.partFree || '', partFree: '', repair: g.repair || '', num: s0.num || '', numN: s0.numN || 1, numOn: s0.numOn !== undefined ? s0.numOn : !!g.num, step: nextIdx});
+        if (g.kc === 'K' && g.num && s0.numN === undefined) st.num = g.num;   // 版11までの写真は番号をそのまま使う
+        render(); openCamera(); });
       head.append(more);
     }
     const sr = document.createElement('div'); sr.className = 'steprow';
@@ -1157,6 +1206,22 @@ for (const id of ['koji', 'homeKoji']) {
 }
 $('partFree').addEventListener('input', e => { st.partFree = e.target.value; if (st.partFree.trim()) st.part = ''; render(); });
 $('num').addEventListener('input', e => { st.num = e.target.value; render(); });
+$('numPlus').addEventListener('click', () => { st.num = ''; st.numOn = true; st.numN = (st.numN || 1) + 1; render(); });
+$('numMinus').addEventListener('click', () => { st.num = ''; st.numOn = true; st.numN = Math.max(1, (st.numN || 1) - 1); render(); });
+$('numOff').addEventListener('click', () => { st.num = ''; st.numOn = !st.numOn; render(); });
+// 声で部位を入れる（使えないスマホでは、キーボードのマイクを案内する）
+$('micBtn').addEventListener('click', () => {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition, note = $('micNote');
+  if (!SR) { note.hidden = false; note.textContent = 'このスマホではこのボタンが使えません。左の欄を押して、キーボードのマイク（🎤）を押して話してください。'; $('partFree').focus(); return; }
+  try {
+    const rec = new SR(); rec.lang = 'ja-JP'; rec.interimResults = false; rec.maxAlternatives = 1;
+    $('micBtn').classList.add('on'); note.hidden = false; note.textContent = '話してください（例：北側 階段 手摺）';
+    rec.onresult = e => { const t = (e.results[0][0].transcript || '').replace(/[。、\s]+$/, ''); if (t) { st.partFree = t; st.part = ''; note.textContent = '「' + t + '」と入れました。'; render(); } };
+    rec.onerror = () => { note.textContent = 'うまく聞き取れませんでした。もう一度押すか、キーボードのマイクで話してください。'; };
+    rec.onend = () => $('micBtn').classList.remove('on');
+    rec.start();
+  } catch(e) { note.hidden = false; note.textContent = 'このスマホではこのボタンが使えません。キーボードのマイク（🎤）で話してください。'; }
+});
 document.querySelectorAll('[data-style]').forEach(b => b.addEventListener('click', () => { st.style = b.dataset.style; render(); }));
 document.querySelectorAll('[data-size]').forEach(b => b.addEventListener('click', () => { st.pos.s = +b.dataset.size; render(); }));
 document.querySelectorAll('[data-at]').forEach(b => b.addEventListener('click', () => { const a = {lb:[0,1], rb:[1,1], lt:[0,0], rt:[1,0]}[b.dataset.at]; st.pos.fx = a[0]; st.pos.fy = a[1]; render(); }));
@@ -1207,7 +1272,7 @@ setInterval(() => { if (camOn) drawOverlay(); }, 30000);
 window.addEventListener('beforeunload', e => { if (pend.length) { e.preventDefault(); e.returnValue = ''; } });
 
 // 版の番号。新しい版が上がっていたら、撮っている途中でなければ自分で読み直す
-const APP_VER = '11';
+const APP_VER = '12';
 async function checkUpdate(){
   try {
     const t = (await fetch('version.txt?t=' + Date.now(), {cache: 'no-store'}).then(r => r.ok ? r.text() : '')).trim();
