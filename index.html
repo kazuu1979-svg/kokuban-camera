@@ -104,7 +104,7 @@ details summary{cursor:pointer;font-size:14px;color:var(--muted);min-height:40px
 .cam{position:fixed;inset:0;z-index:14;background:#000;display:flex;flex-direction:column}
 .vf{position:relative;flex:0 0 54vh;overflow:hidden;touch-action:none;background:#000;user-select:none;-webkit-user-select:none}
 .vf video{position:absolute;inset:0;width:100%;height:100%;object-fit:contain}
-.vf canvas{position:absolute;left:0;top:0}
+.vf canvas{position:absolute;left:0;top:0;z-index:1;transform:translateZ(0);will-change:transform,opacity}
 .vf .flash{position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none;transition:opacity .25s}
 .vf .camtop{position:absolute;left:8px;right:8px;top:calc(8px + env(safe-area-inset-top,0px));display:flex;gap:8px;justify-content:space-between;pointer-events:none}
 .vf .camtop *{pointer-events:auto}
@@ -728,8 +728,19 @@ function layoutOverlay(){
   ov.width = Math.round(ovBox.w * dpr); ov.height = Math.round(ovBox.h * dpr);
   Object.assign(ov.style, {left: ovBox.left + 'px', top: ovBox.top + 'px', width: ovBox.w + 'px', height: ovBox.h + 'px'});
 }
+// 黒板を描き直す。iPhone は映像の上に重ねた絵の書き換えが画面に出ないことがあるので、
+// 次の描画の時にまとめて描き、少しだけ見え方を変えて必ず出し直させる
+let ovPending = false;
 function drawOverlay(){
+  if (ovPending) return;
+  ovPending = true;
+  const go = () => { if (!ovPending) return; ovPending = false; paintOverlay(); };
+  requestAnimationFrame(go);
+  setTimeout(go, 120);   // 画面の更新の合図が来ない時も、必ず描く
+}
+function paintOverlay(){
   const ov = $('ov'), c = ov.getContext('2d');
+  ov.style.opacity = ov.style.opacity === '1' ? '0.999' : '1';
   c.setTransform(1, 0, 0, 1, 0, 0);
   c.clearRect(0, 0, ov.width, ov.height);
   if (!ov.width) return;
@@ -1169,6 +1180,13 @@ $('copyLink').addEventListener('click', async () => {
   catch(e) { const r = document.createRange(); r.selectNodeContents($('entryLink')); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); setMsg($('copyMsg'), 'コピーできませんでした。リンクを長押ししてコピーしてください。', false); }
 });
 window.addEventListener('resize', () => { if (camOn) { layoutOverlay(); drawOverlay(); } if (editorOpen) layoutViewer(); });
+// 縦・横に回した時：映像の大きさが変わるのを待ってから黒板を並べ直す
+const relayoutCam = () => { if (camOn) { layoutOverlay(); drawOverlay(); } };
+$('video').addEventListener('resize', relayoutCam);
+$('video').addEventListener('loadedmetadata', relayoutCam);
+window.addEventListener('orientationchange', () => { [100, 350, 800].forEach(ms => setTimeout(relayoutCam, ms)); });
+if (screen.orientation && screen.orientation.addEventListener) screen.orientation.addEventListener('change', () => { [100, 350, 800].forEach(ms => setTimeout(relayoutCam, ms)); });
+if (window.ResizeObserver) new ResizeObserver(relayoutCam).observe($('vf'));
 document.addEventListener('visibilitychange', () => { if (document.hidden && camOn) stopStream(); else if (!document.hidden && camOn && !stream) { camOn = false; $('choicesHome').appendChild($('choices')); openCamera(); } });
 setInterval(() => { if (camOn) drawOverlay(); }, 30000);
 window.addEventListener('beforeunload', e => { if (pend.length) { e.preventDefault(); e.returnValue = ''; } });
