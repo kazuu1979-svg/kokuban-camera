@@ -84,7 +84,7 @@ details summary{cursor:pointer;font-size:14px;color:var(--muted);min-height:40px
 .thumbs button{padding:0;border:2px solid transparent;border-radius:6px;overflow:hidden;background:var(--chip);cursor:pointer;position:relative}
 .thumbs img{display:block;width:100%;aspect-ratio:4/3;object-fit:cover}
 .thumbs span{position:absolute;left:0;right:0;bottom:0;font-size:10px;background:rgba(0,0,0,.6);color:#fff;padding:1px 3px;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.thumbs .sent::after{content:"送";position:absolute;top:2px;right:2px;font-size:10px;background:var(--done);color:#fff;border-radius:3px;padding:0 3px}
+.thumbs .bd{position:absolute;top:2px;right:2px;font-size:10px;background:var(--done);color:#fff;border-radius:3px;padding:0 3px;font-style:normal}
 .thumbs .sel{border-color:var(--warn)}
 .thumbs .sel::before{content:"✓";position:absolute;top:2px;left:2px;width:20px;height:20px;border-radius:10px;background:var(--warn);color:#fff;font-size:13px;line-height:20px;text-align:center;z-index:1}
 .kindhead{font-size:13px;color:var(--muted);margin:6px 0 0;font-weight:700}
@@ -188,12 +188,14 @@ details summary{cursor:pointer;font-size:14px;color:var(--muted);min-height:40px
     <div class="sub">
       <button type="button" class="btn slim" id="selMode">選ぶ</button>
       <button type="button" class="btn slim" id="sendUnsent">まだ送っていない写真を LINE（グループ）へ</button>
+      <button type="button" class="btn slim" id="saveUnsaved">まだ保存していない写真を携帯に保存</button>
       <button type="button" class="btn slim primary" id="openLedger">写真台帳（PDF）</button>
     </div>
     <div id="selBar" class="confirm" hidden>
       <div class="note" id="selInfo">写真を押して選んでください。</div>
       <div class="sub">
         <button type="button" class="btn primary" id="selSend">選んだ写真を LINE へ</button>
+        <button type="button" class="btn" id="selSave">選んだ写真を携帯に保存</button>
         <button type="button" class="btn warn" id="selDelete">選んだ写真を消す</button>
       </div>
       <div id="delConfirm" class="confirm" hidden>
@@ -354,6 +356,7 @@ details summary{cursor:pointer;font-size:14px;color:var(--muted);min-height:40px
     <img id="sheetImg" class="sheetimg" alt="黒板入りの写真">
     <p class="meta" id="sheetMeta"></p>
     <button type="button" class="btn primary big" id="sendBtn">LINEへ送る</button>
+    <button type="button" class="btn big" id="savePhotoBtn">携帯の写真に保存</button>
     <p class="msg" id="sendMsg"></p>
     <div class="sub">
       <button type="button" class="btn" id="fixBtn">黒板を直す</button>
@@ -1018,6 +1021,7 @@ function renderAlbum(){
   const all = photos.length;
   $('albumCount').textContent = koji ? list.length + '枚' : '';
   $('sendUnsent').hidden = !list.some(p => !p.sent);
+  $('saveUnsaved').hidden = !list.some(p => !p.saved);
   $('openLedger').hidden = !list.length;
   $('selMode').hidden = !list.length;
   $('selMode').textContent = selecting ? '選ぶのをやめる' : '選ぶ';
@@ -1056,9 +1060,10 @@ function renderAlbum(){
     const th = document.createElement('div'); th.className = 'thumbs';
     g.items.forEach(p => {
       const b = document.createElement('button'); b.type = 'button';
-      b.className = [p.sent ? 'sent' : '', selected.has(p.id) ? 'sel' : ''].filter(Boolean).join(' ');
+      b.className = selected.has(p.id) ? 'sel' : '';
       const im = document.createElement('img'); im.src = urlOf(p, 'thumb'); im.alt = p.step; im.loading = 'lazy';
       const sp = document.createElement('span'); sp.textContent = p.step;
+      const mk = (p.sent ? '送' : '') + (p.saved ? '保' : ''); if (mk) { const bd = document.createElement('i'); bd.className = 'bd'; bd.textContent = mk; b.append(bd); }
       b.append(im, sp);
       b.addEventListener('click', () => { if (selecting) { selected.has(p.id) ? selected.delete(p.id) : selected.add(p.id); renderAlbum(); } else openSheet(p); });
       th.append(b);
@@ -1115,6 +1120,27 @@ async function send(list, msgEl){
     setMsg(msgEl, how === 'shared' ? (list.length > 1 ? list.length + '枚を渡しました。' : '渡しました。') : 'この機械では共有の画面が出せないので、保存しました。', true);
   } catch(e) {
     setMsg(msgEl, e && e.name === 'AbortError' ? 'やめました。' : '共有の画面を出せませんでした。写真を長押しして保存してください。', false);
+  }
+  renderAlbum();
+}
+// 携帯の写真に保存。iPhone はページから写真アプリへ直接は入れられないので、
+// 共有の画面を出して「画像を保存」を押してもらう。Android などはそのまま保存（ダウンロード）
+async function savePhotos(list, msgEl){
+  if (!list.length) { setMsg(msgEl, 'まだ保存していない写真はありません。', true); return; }
+  const files = list.map(p => new File([p.blob], p.filename, {type: 'image/jpeg'}));
+  try {
+    if (isIOS && navigator.canShare && navigator.share && navigator.canShare({files})) {
+      setMsg(msgEl, '出てきた画面で「' + (list.length > 1 ? list.length + '枚の画像を保存' : '画像を保存') + '」を押してください。', true);
+      await navigator.share({files});
+      for (const p of list) { p.saved = true; await idbPut(p); }
+      setMsg(msgEl, '「画像を保存」を押していれば、写真アプリに入りました。', true);
+    } else {
+      files.forEach(f => { const a = document.createElement('a'); a.href = URL.createObjectURL(f); a.download = f.name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000); });
+      for (const p of list) { p.saved = true; await idbPut(p); }
+      setMsg(msgEl, list.length + '枚を保存しました（写真のアプリの「ダウンロード」に入ります）。', true);
+    }
+  } catch(e) {
+    setMsg(msgEl, e && e.name === 'AbortError' ? 'やめました。' : '保存できませんでした。写真を長押しして「"写真"に保存」を押してください。', false);
   }
   renderAlbum();
 }
@@ -1267,6 +1293,9 @@ $('selSend').addEventListener('click', () => send(photos.filter(p => selected.ha
 $('selDelete').addEventListener('click', () => { if (!selected.size) return; $('delText').textContent = selected.size + '枚を消しますか？消すと元に戻せません。'; $('delConfirm').hidden = false; });
 $('delNo').addEventListener('click', () => { $('delConfirm').hidden = true; });
 $('delYes').addEventListener('click', async () => { await deletePhotos([...selected]); selected.clear(); $('delConfirm').hidden = true; setMsg($('albumMsg'), '消しました。', true); renderAlbum(); });
+$('savePhotoBtn').addEventListener('click', () => current && savePhotos([current], $('sendMsg')));
+$('saveUnsaved').addEventListener('click', () => savePhotos(photos.filter(p => p.koji === st.koji.trim() && !p.saved).sort(sortKey), $('albumMsg')));
+$('selSave').addEventListener('click', () => savePhotos(photos.filter(p => selected.has(p.id)).sort(sortKey), $('albumMsg')));
 $('sendUnsent').addEventListener('click', () => send(photos.filter(p => p.koji === st.koji.trim() && !p.sent).sort(sortKey), $('albumMsg')));
 $('openLedger').addEventListener('click', openLedger);
 $('ledClose').addEventListener('click', () => { $('ledger').hidden = true; document.body.classList.remove('lock'); });
@@ -1289,7 +1318,7 @@ setInterval(() => { if (camOn) drawOverlay(); }, 30000);
 window.addEventListener('beforeunload', e => { if (pend.length) { e.preventDefault(); e.returnValue = ''; } });
 
 // 版の番号。新しい版が上がっていたら、撮っている途中でなければ自分で読み直す
-const APP_VER = '13';
+const APP_VER = '14';
 async function checkUpdate(){
   try {
     const t = (await fetch('version.txt?t=' + Date.now(), {cache: 'no-store'}).then(r => r.ok ? r.text() : '')).trim();
