@@ -120,11 +120,21 @@ details summary{cursor:pointer;font-size:14px;color:var(--muted);min-height:40px
 .shutter:active{transform:scale(.94)}
 .cbar .side{width:64px;display:flex;justify-content:center}
 .camnext{font-size:13px;color:#fff;background:#000;padding:4px 12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-@media (orientation: landscape){
-  .cam{flex-direction:row}
-  .vf{flex:1 1 auto;height:100%}
-  .cside{flex:0 0 min(44vw,420px)}
-}
+.cbar .panelBtn{display:none}
+/* 横に持った時：映像を画面いっぱい、右端にシャッターの列。選ぶ所は「選ぶ」で右から出す */
+.cam.land{display:block}
+.cam.land .vf{position:absolute;left:0;top:0;bottom:0;right:calc(108px + env(safe-area-inset-right,0px));height:auto;flex:none}
+.cam.land .cside{position:absolute;inset:0;background:transparent;pointer-events:none;display:block}
+.cam.land .cbar{position:absolute;right:0;top:0;bottom:0;width:calc(108px + env(safe-area-inset-right,0px));flex-direction:column;justify-content:space-evenly;padding:10px env(safe-area-inset-right,0px) 10px 0;pointer-events:auto}
+.cam.land .cbar .panelBtn{display:inline-flex}
+.cam.land .cbar .side{width:auto}
+.cam.land .cpanel{position:absolute;top:0;bottom:0;right:calc(108px + env(safe-area-inset-right,0px));width:min(400px,60vw);background:var(--bg);box-shadow:-4px 0 16px rgba(0,0,0,.4);pointer-events:auto;display:none}
+.cam.land.panel .cpanel{display:block}
+.cam.land .camnext{position:absolute;left:0;bottom:0;max-width:52%;background:rgba(0,0,0,.55);pointer-events:none;padding-left:calc(12px + env(safe-area-inset-left,0px));border-top-right-radius:8px}
+.cam.land .camtop{top:auto;bottom:34px;left:calc(8px + env(safe-area-inset-left,0px));right:8px;justify-content:flex-start}
+.cam.land #camTall{display:none}
+.cam.land .hint{display:none}
+.panelBtn{font:inherit;font-size:15px;font-weight:700;min-width:72px;min-height:48px;border-radius:24px;border:0;background:#fff;color:#111;cursor:pointer}
 
 /* 写真の画面（撮ってから選ぶ・黒板を直す） */
 .viewer{position:relative;flex:0 0 auto;height:40vh;background:var(--viewer);overflow:hidden;touch-action:none;user-select:none;-webkit-user-select:none}
@@ -277,7 +287,7 @@ details summary{cursor:pointer;font-size:14px;color:var(--muted);min-height:40px
     <div class="cbar">
       <button type="button" class="lastshot" id="lastShot" aria-label="撮った写真を見る"><span id="camCount">0</span></button>
       <button type="button" class="shutter" id="shutter" aria-label="撮る"></button>
-      <div class="side"></div>
+      <div class="side"><button type="button" class="panelBtn" id="panelBtn">選ぶ</button></div>
     </div>
   </div>
 </div>
@@ -680,6 +690,7 @@ async function openCamera(){
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { $('cam').click(); return; }
   startMotion();   // iPhone はここで「動作と方向」の許可を聞く（押した時でないと聞けない）
   $('camScreen').hidden = false; document.body.classList.add('lock');
+  camLayout();
   $('cpanelIn').appendChild($('choices'));
   camOn = true; camShots = 0; $('camCount').textContent = '0'; $('lastShot').style.backgroundImage = '';
   render();
@@ -702,7 +713,13 @@ function closeCamera(){
   render(); renderAlbum();
 }
 const ovBox = {left:0, top:0, w:0, h:0};
+function camLayout(){
+  const land = window.innerWidth > window.innerHeight;
+  const cs = $('camScreen');
+  if (cs.classList.contains('land') !== land) { cs.classList.toggle('land', land); cs.classList.remove('panel'); $('panelBtn').textContent = '選ぶ'; }
+}
 function layoutOverlay(){
+  camLayout();
   const vf = $('vf'), v = $('video'), ov = $('ov');
   const VW = v.videoWidth || 4, VH = v.videoHeight || 3;
   const k = Math.min(vf.clientWidth / VW, vf.clientHeight / VH);
@@ -1119,6 +1136,7 @@ document.querySelectorAll('[data-size]').forEach(b => b.addEventListener('click'
 document.querySelectorAll('[data-at]').forEach(b => b.addEventListener('click', () => { const a = {lb:[0,1], rb:[1,1], lt:[0,0], rt:[1,0]}[b.dataset.at]; st.pos.fx = a[0]; st.pos.fy = a[1]; render(); }));
 $('camOpen').addEventListener('click', openCamera);
 $('camClose').addEventListener('click', closeCamera);
+$('panelBtn').addEventListener('click', () => { const on = $('camScreen').classList.toggle('panel'); $('panelBtn').textContent = on ? '閉じる' : '選ぶ'; });
 $('camRot').addEventListener('click', () => { st.rotMode = {auto: 'land', land: 'portrait', portrait: 'auto'}[st.rotMode] || 'auto'; persist(); drawOverlay(); });
 $('camTall').addEventListener('click', () => { st.camSmall = !st.camSmall; render(); requestAnimationFrame(() => { layoutOverlay(); drawOverlay(); }); });
 $('shutter').addEventListener('click', shoot);
