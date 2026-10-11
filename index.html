@@ -104,7 +104,8 @@ details summary{cursor:pointer;font-size:14px;color:var(--muted);min-height:40px
 .cam{position:fixed;inset:0;z-index:14;background:#000;display:flex;flex-direction:column}
 .vf{position:relative;flex:0 0 54vh;overflow:hidden;touch-action:none;background:#000;user-select:none;-webkit-user-select:none}
 .vf video{position:absolute;inset:0;width:100%;height:100%;object-fit:contain}
-.vf canvas{position:absolute;left:0;top:0;z-index:1;transform:translateZ(0);will-change:transform,opacity}
+.vf canvas{position:absolute;left:0;top:0;z-index:1}
+.ver{font-size:12px;color:var(--muted);font-weight:400;margin-left:6px}
 .vf .flash{position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none;transition:opacity .25s}
 .vf .camtop{position:absolute;left:8px;right:8px;top:calc(8px + env(safe-area-inset-top,0px));display:flex;gap:8px;justify-content:space-between;pointer-events:none}
 .vf .camtop *{pointer-events:auto}
@@ -153,7 +154,7 @@ details summary{cursor:pointer;font-size:14px;color:var(--muted);min-height:40px
 <body>
 <div class="wrap" id="wrap">
   <header>
-    <h1>黒板カメラ</h1>
+    <h1>黒板カメラ<span class="ver" id="ver"></span></h1>
     <p>カメラの画面に黒板が出ます。工種・測点・工程を選んでシャッター。撮った写真はこのスマホに残り、「LINEへ送る」で LINE に上げられます。</p>
   </header>
 
@@ -698,7 +699,7 @@ async function openCamera(){
     stream = await navigator.mediaDevices.getUserMedia({audio: false, video: {facingMode: {ideal: 'environment'}, width: {ideal: 2560}, height: {ideal: 1920}, aspectRatio: {ideal: 4/3}}});
     const v = $('video'); v.srcObject = stream; await v.play().catch(() => {});
     await new Promise(r => { if (v.videoWidth) r(); else v.onloadedmetadata = () => r(); setTimeout(r, 3000); });
-    layoutOverlay(); drawOverlay();
+    layoutOverlay(); startLoop();
   } catch(e) {
     closeCamera();
     flashHome('カメラを使えませんでした。ふつうのカメラで撮ります（撮った後に黒板を入れます）。');
@@ -718,6 +719,7 @@ function camLayout(){
   const cs = $('camScreen');
   if (cs.classList.contains('land') !== land) { cs.classList.toggle('land', land); cs.classList.remove('panel'); $('panelBtn').textContent = '選ぶ'; }
 }
+// 映像の大きさ・位置に合わせて、見せる絵（canvas）を置く。大きさが変わった時だけ作り直す
 function layoutOverlay(){
   camLayout();
   const vf = $('vf'), v = $('video'), ov = $('ov');
@@ -725,30 +727,43 @@ function layoutOverlay(){
   const k = Math.min(vf.clientWidth / VW, vf.clientHeight / VH);
   ovBox.w = VW * k; ovBox.h = VH * k; ovBox.left = (vf.clientWidth - ovBox.w) / 2; ovBox.top = (vf.clientHeight - ovBox.h) / 2;
   const dpr = Math.min(2, window.devicePixelRatio || 1);
-  ov.width = Math.round(ovBox.w * dpr); ov.height = Math.round(ovBox.h * dpr);
+  const pw = Math.max(1, Math.round(ovBox.w * dpr)), ph = Math.max(1, Math.round(ovBox.h * dpr));
+  if (ov.width !== pw || ov.height !== ph) { ov.width = pw; ov.height = ph; }
   Object.assign(ov.style, {left: ovBox.left + 'px', top: ovBox.top + 'px', width: ovBox.w + 'px', height: ovBox.h + 'px'});
 }
-// 黒板を描き直す。iPhone は映像の上に重ねた絵の書き換えが画面に出ないことがあるので、
-// 次の描画の時にまとめて描き、少しだけ見え方を変えて必ず出し直させる
-let ovPending = false;
-function drawOverlay(){
-  if (ovPending) return;
-  ovPending = true;
-  const go = () => { if (!ovPending) return; ovPending = false; paintOverlay(); };
-  requestAnimationFrame(go);
-  setTimeout(go, 120);   // 画面の更新の合図が来ない時も、必ず描く
+// カメラの映像と黒板を、1枚の絵にまとめて何度も描き直す（iPhone で重ねた黒板が出ない・遅れる対策）
+// 黒板の絵は、中身・向き・大きさが変わった時だけ作り直して、ふだんは使い回す
+let boardCache = null, boardSig = '', loopOn = false, lastPaint = 0;
+function drawOverlay(){ if (camOn) paintFrame(); }
+function startLoop(){
+  if (loopOn) return;
+  loopOn = true;
+  const step = () => { if (!camOn) { loopOn = false; return; } paintFrame(); requestAnimationFrame(step); };
+  requestAnimationFrame(step);
 }
-function paintOverlay(){
-  const ov = $('ov'), c = ov.getContext('2d');
-  ov.style.opacity = ov.style.opacity === '1' ? '0.999' : '1';
+setInterval(() => { if (camOn && performance.now() - lastPaint > 250) paintFrame(); }, 250);   // 合図が来ない時の予備
+function paintFrame(){
+  lastPaint = performance.now();
+  layoutOverlay();
+  const ov = $('ov'), c = ov.getContext('2d'), v = $('video');
   c.setTransform(1, 0, 0, 1, 0, 0);
-  c.clearRect(0, 0, ov.width, ov.height);
-  if (!ov.width) return;
+  if (v.videoWidth && v.readyState >= 2) c.drawImage(v, 0, 0, ov.width, ov.height);
+  else { c.fillStyle = '#000'; c.fillRect(0, 0, ov.width, ov.height); }
   const r = camRot(), W = turned(r) ? ov.height : ov.width, H = turned(r) ? ov.width : ov.height;
+  const m = boardMeta();
+  const sig = [W, H, r, st.style, st.pos.fx, st.pos.fy, st.pos.s, m.koji, m.kind, m.sokuten, m.num, m.repair, m.step, m.date, m.time.slice(0, 5)].join('|');
+  if (sig !== boardSig || !boardCache) {
+    boardCache = boardCache || document.createElement('canvas');
+    boardCache.width = W; boardCache.height = H;
+    const bc = boardCache.getContext('2d');
+    bc.clearRect(0, 0, W, H);
+    drawBoard(bc, W, H, m, st.pos, st.style);
+    boardSig = sig;
+    $('camRot').textContent = rotLabel();
+  }
   setPhotoToFrame(c, r, ov.width, ov.height);
-  drawBoard(c, W, H, boardMeta(), st.pos, st.style);
+  c.drawImage(boardCache, 0, 0);
   c.setTransform(1, 0, 0, 1, 0, 0);
-  $('camRot').textContent = rotLabel();
 }
 async function shoot(){
   if (!camOn || !stream) return;
@@ -1191,7 +1206,23 @@ document.addEventListener('visibilitychange', () => { if (document.hidden && cam
 setInterval(() => { if (camOn) drawOverlay(); }, 30000);
 window.addEventListener('beforeunload', e => { if (pend.length) { e.preventDefault(); e.returnValue = ''; } });
 
+// 版の番号。新しい版が上がっていたら、撮っている途中でなければ自分で読み直す
+const APP_VER = '11';
+async function checkUpdate(){
+  try {
+    const t = (await fetch('version.txt?t=' + Date.now(), {cache: 'no-store'}).then(r => r.ok ? r.text() : '')).trim();
+    if (!t || t === APP_VER || camOn || pend.length || editorOpen) return;
+    let done = ''; try { done = sessionStorage.getItem('kokuban-reloaded') || ''; } catch(e) {}
+    if (done === t) return;   // 同じ版で何度も読み直さない
+    try { sessionStorage.setItem('kokuban-reloaded', t); } catch(e) {}
+    location.reload();
+  } catch(e) {}
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden) checkUpdate(); });
+
 (async function start(){
+  $('ver').textContent = '版' + APP_VER;
+  checkUpdate();
   render();
   idb = await idbOpen();
   photos = await idbAll();

@@ -1,5 +1,5 @@
 // 黒板カメラ：電波が無くても開けるように、画面の部品をスマホに置いておく
-const CACHE = 'kokuban-camera-10';
+const CACHE = 'kokuban-camera-11';
 const SHELL = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png'];
 const PDFLIB = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
 
@@ -18,7 +18,7 @@ self.addEventListener('fetch', e => {
   const url = new URL(req.url);
   // 自分の画面：まずネット、だめなら置いておいた物
   if (url.origin === location.origin) {
-    e.respondWith(fetch(req).then(res => { const copy = res.clone(); caches.open(CACHE).then(c => c.put(req, copy)); return res; }).catch(() => caches.match(req, {ignoreSearch: true}).then(r => r || caches.match('./index.html'))));
+    e.respondWith(fetch(req.url, {cache: 'no-cache', credentials: 'same-origin'}).then(res => { const copy = res.clone(); caches.open(CACHE).then(c => c.put(req, copy)); return res; }).catch(() => caches.match(req, {ignoreSearch: true}).then(r => r || caches.match('./index.html'))));
     return;
   }
   // 字の形（Google Fonts）と台帳の部品（cdnjs）：置いておいた物を先に使う
