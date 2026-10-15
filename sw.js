@@ -1,6 +1,6 @@
 // 黒板カメラ：電波が無くても開けるように、画面の部品をスマホに置いておく
-const CACHE = 'kokuban-camera-20';
-const SHELL = ['./', './index.html', './app.js?v=20', './manifest.webmanifest', './icon-192.png', './icon-512.png'];
+const CACHE = 'kokuban-camera-21';
+const SHELL = ['./', './index.html', './app.js?v=21', './manifest.webmanifest', './icon-192.png', './icon-512.png'];
 const PDFLIB = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
 
 self.addEventListener('install', e => {

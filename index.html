@@ -51,7 +51,9 @@ textarea{min-height:120px}
 .kojibtn span:first-child{flex:1;font-size:19px;font-weight:700;min-width:0;overflow-wrap:anywhere}
 .kojibtn .empty{color:var(--warn);font-weight:700}
 .chev{color:var(--muted);font-size:14px;white-space:nowrap}
-.tools{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.tools{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.tool.main{border-color:var(--brand);border-width:2px}
+.tool.main b{color:var(--brand)}
 .tool{display:flex;flex-direction:column;align-items:flex-start;gap:2px;min-height:64px;padding:8px 10px;border-radius:12px;border:1px solid var(--line);background:var(--panel);cursor:pointer;text-align:left}
 .tool b{font-size:15px}
 .tool small{font-size:12px;color:var(--muted);line-height:1.3}
@@ -146,6 +148,11 @@ details summary{cursor:pointer;font-size:14px;color:var(--muted);min-height:40px
 .crow2{display:flex;border-bottom:1px solid var(--dark-line)}
 .cbox{flex:1 1 0;min-width:0;display:flex;flex-direction:column;align-items:flex-start;gap:1px;min-height:58px;padding:5px 12px;border:0;background:transparent;color:#fff;text-align:left;cursor:pointer}
 .cbox+.cbox{border-left:1px solid var(--dark-line)}
+.cpos{flex:1 1 0;min-width:0;display:flex}
+.cpos+.cpos{border-left:1px solid var(--dark-line)}
+.cpos .cbox{padding:5px 6px}
+.sb.sm{flex:0 0 38px;min-height:58px;font-size:16px;background:#232a26}
+.sb:disabled{color:#5d6a63}
 .cbox .cl{font-size:12px;color:#a9b5ae}
 .cbox .cv{width:100%;font-size:15px;font-weight:700;line-height:1.25;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
 .cbox .cv.none{color:#ffcc80;font-weight:400}
@@ -172,6 +179,10 @@ details summary{cursor:pointer;font-size:14px;color:var(--muted);min-height:40px
 .cam.land .crow2{flex-direction:column;flex:1 1 auto;min-height:0}
 .cam.land .cbox{flex:1 1 0;min-height:0;padding:4px 10px;border-bottom:1px solid var(--dark-line)}
 .cam.land .cbox+.cbox{border-left:0}
+.cam.land .cpos{flex:1 1 0;min-height:0;border-left:0;border-bottom:1px solid var(--dark-line)}
+.cam.land .cpos+.cpos{border-left:0}
+.cam.land .cpos .cbox{border-bottom:0}
+.cam.land .sb.sm{flex:0 0 30px;min-height:0;font-size:14px}
 .cam.land .cbox .cv{font-size:14px;-webkit-line-clamp:3}
 .cam.land .crow.step{flex-wrap:wrap;flex:0 0 auto}
 .cam.land .sv{flex:1 1 100%;order:-1;min-height:46px;padding:0 10px;border-bottom:1px solid var(--dark-line)}
@@ -269,7 +280,14 @@ details summary{cursor:pointer;font-size:14px;color:var(--muted);min-height:40px
 .toast{position:fixed;left:50%;bottom:calc(150px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:#222;color:#fff;padding:10px 16px;border-radius:12px;font-size:15px;z-index:70;max-width:calc(100vw - 32px);box-shadow:0 4px 16px rgba(0,0,0,.4);pointer-events:none;opacity:0;transition:opacity .2s}
 .toast.on{opacity:1}
 @media (prefers-reduced-motion: reduce){.toast,.vf .flash,.hint{transition:none}}
-@media (max-width:360px){.tools{grid-template-columns:1fr}.tool{min-height:52px}}
+@media (max-width:340px){.tools{grid-template-columns:1fr}.tool{min-height:52px}}
+.osum{font-size:15px;line-height:1.6}
+.osum b{font-size:20px}
+.oparts{display:flex;flex-direction:column;gap:8px}
+.opart{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:var(--bg)}
+.opart .on{flex:1;min-width:10em;font-size:14px;overflow-wrap:anywhere}
+.opart.done{opacity:.6}
+.help ol li,.osteps li{margin:2px 0}
 </style>
 </head>
 <body>
@@ -287,6 +305,7 @@ details summary{cursor:pointer;font-size:14px;color:var(--muted);min-height:40px
   </section>
 
   <nav class="tools" aria-label="ほかの作業">
+    <button type="button" class="tool main" id="officeBtn"><b>事務所へ送る</b><small>まとめて1つのファイルでLINEへ</small></button>
     <button type="button" class="tool" id="ledgerBtn"><b>写真台帳</b><small>PDFを作って送る</small></button>
     <button type="button" class="tool" id="kindsBtn"><b>工種・部位</b><small>この工事に合わせて足す</small></button>
     <button type="button" class="tool" id="shareBtn"><b>職人さんに渡す</b><small>同じ設定をLINEで</small></button>
@@ -328,6 +347,7 @@ details summary{cursor:pointer;font-size:14px;color:var(--muted);min-height:40px
       <button type="button" class="btn primary" id="selSend">LINEへ送る</button>
       <button type="button" class="btn" id="selSave">携帯に保存</button>
       <button type="button" class="btn" id="selLedger">台帳にする</button>
+      <button type="button" class="btn" id="selOffice" style="grid-column:1/-1">事務所へまとめて送る</button>
       <button type="button" class="btn warn" id="selDel">消す</button>
     </div>
     <div class="confirm" id="selDelConfirm" hidden>
@@ -353,8 +373,16 @@ details summary{cursor:pointer;font-size:14px;color:var(--muted);min-height:40px
   </div>
   <div class="cinfo">
     <div class="crow2">
-      <button type="button" class="cbox" id="rowKind"><span class="cl">工種 ›</span><span class="cv" id="cvKind"></span></button>
-      <button type="button" class="cbox" id="rowPos"><span class="cl">測点 ›</span><span class="cv" id="cvPos"></span></button>
+      <div class="cpos">
+        <button type="button" class="sb sm" id="kindPrev" aria-label="前の工種">◀</button>
+        <button type="button" class="cbox" id="rowKind"><span class="cl">工種 ›</span><span class="cv" id="cvKind"></span></button>
+        <button type="button" class="sb sm" id="kindNext" aria-label="次の工種">▶</button>
+      </div>
+      <div class="cpos">
+        <button type="button" class="sb sm" id="posPrev" aria-label="前の測点">◀</button>
+        <button type="button" class="cbox" id="rowPos"><span class="cl" id="cvPosL">測点 ›</span><span class="cv" id="cvPos"></span></button>
+        <button type="button" class="sb sm" id="posNext" aria-label="次の測点">▶</button>
+      </div>
     </div>
     <div class="crow step">
       <button type="button" class="sb" id="stepPrev" aria-label="前の工程">◀</button>
@@ -454,6 +482,45 @@ details summary{cursor:pointer;font-size:14px;color:var(--muted);min-height:40px
   </div>
 </div>
 
+<!-- 事務所へ送る（まとめて1つのファイル＝zip） -->
+<div class="full" id="office" hidden role="dialog" aria-modal="true" aria-labelledby="oTitle">
+  <div class="fhead">
+    <button type="button" class="btn slim" id="oClose">‹ 戻る</button>
+    <h2 id="oTitle">事務所へ送る</h2>
+  </div>
+  <div class="fbody"><div class="pin">
+    <p class="note">写真を<b>1つのファイル（zip）</b>にまとめて LINE で送ります。写真の画質が落ちず、撮った日と工種・測点・工程の名前が付いたまま届くので、事務所のパソコンで現場の写真フォルダへ自動で並べられます。</p>
+    <div class="secth">送る写真</div>
+    <div class="chips" id="oScope" role="group" aria-label="送る写真"></div>
+    <p class="osum" id="oSum"></p>
+    <div class="oparts" id="oParts"></div>
+    <p class="msg" id="oMsg"></p>
+    <details>
+      <summary>LINE が出てこない時・パソコンでの受け取り方</summary>
+      <ol class="note osteps">
+        <li>「送る」で出た画面に LINE が無い時は「ファイルに保存」を押し、LINE のトークで <b>＋</b> → <b>ファイル</b> → 保存したファイルを選んで送ってください。</li>
+        <li>事務所のパソコンでは、LINE のトークのファイルを <b>右クリック → 名前を付けて保存</b> で <b>00_受信箱</b> に保存します。朝のまとめが現場の 写真\黒板カメラ\ に工種ごとに並べます。</li>
+        <li>LINE のファイルは保存期間があります。届いたら早めにパソコンへ保存してください。</li>
+      </ol>
+    </details>
+    <div class="secth">LINE のアルバムに入れる</div>
+    <p class="note">ページから LINE のアルバムを直接作ることはできません（LINE がその仕組みを外に出していないため）。かわりに、下の2つを押してから LINE で作ります。送る写真は上の「送る写真」で選んだ物です。</p>
+    <div class="grid2">
+      <button type="button" class="btn" id="oAlbumSave">① 携帯に保存</button>
+      <button type="button" class="btn" id="oAlbumName">② 名前をコピー</button>
+    </div>
+    <p class="note" id="oAlbumText"></p>
+    <ol class="note osteps">
+      <li>LINE でグループのトークを開き、右上の <b>≡</b> → <b>アルバム</b> → 右下の <b>＋</b>（アルバムを作成）。</li>
+      <li>写真を選ぶ画面で、①で保存した写真（いちばん新しい所に並んでいます）を選んで <b>次へ</b>。</li>
+      <li>アルバム名の所を長押しして <b>ペースト</b>（②でコピーした名前）→ <b>作成</b>。グループのみんなが見られます。</li>
+    </ol>
+  </div></div>
+  <div class="ffoot">
+    <button type="button" class="btn primary big" id="oMake">ファイルを作る</button>
+  </div>
+</div>
+
 <!-- 写真台帳 -->
 <div class="full" id="ledger" hidden role="dialog" aria-modal="true" aria-labelledby="ledTitle">
   <div class="fhead">
@@ -542,6 +609,8 @@ details summary{cursor:pointer;font-size:14px;color:var(--muted);min-height:40px
       <li>はじめの画面で <b>工事名</b> を選ぶ（または入れる）。</li>
       <li><b>カメラを開く</b>。最初だけ「カメラを使ってよいか」と聞かれるので <b>許可</b> を押す。</li>
       <li>下の <b>工種</b>・<b>測点</b> の行を押して選ぶ。<b>工程</b> は ◀ ▶ で変える。</li>
+      <li><b>工種</b> の ◀ ▶：前・次の工種に変わる（工程は「施工前」に戻る）。</li>
+      <li><b>測点</b> の ◀ ▶：番号を振る工種（下地補修など）は番号が1つずつ（N-1-2 → N-2-2）、ほかの工種は階が1つずつ（2階 → 3階）変わる。どちらが変わるかは「測点」の横に出る。</li>
       <li>白い丸（シャッター）で撮る。撮ると工程が1つ進むので、続けて撮れる。</li>
       <li>黒板は指で動かせる。黒板の上を2本指で広げると黒板が大きくなる。黒板の外を2本指で広げるとカメラが拡大する。</li>
     </ol></section>
@@ -551,6 +620,13 @@ details summary{cursor:pointer;font-size:14px;color:var(--muted);min-height:40px
       <li><b>丸・矢印・字を書く</b>：指摘の所に赤い丸や矢印を書ける。書く前の写真も残るので、あとで書き直せる。</li>
       <li><b>黒板を直す</b>：選び間違えた時。撮った日時はそのまま。</li>
       <li><b>台帳の備考</b>：台帳の PDF にだけ出る。</li>
+    </ol></section>
+    <section class="card"><h2>事務所へ送る（まとめて）</h2><ol>
+      <li>はじめの画面の <b>事務所へ送る</b> を押す（選んだ写真だけなら「選ぶ」→ <b>事務所へまとめて送る</b>）。</li>
+      <li>送る写真（まだ送っていない・今日・全部）を選んで <b>ファイルを作る</b>。</li>
+      <li><b>送る</b> → LINE → 送り先を選んで送信。写真が多い時は「その1・その2」に分かれるので、全部送る。</li>
+      <li>事務所のパソコンで 00_受信箱 に保存すると、現場の写真フォルダへ自動で並びます。</li>
+      <li><b>LINE のアルバム</b>：同じ画面の「① 携帯に保存」「② 名前をコピー」を押してから、LINE のグループ → ≡ → アルバム → ＋ で作る。</li>
     </ol></section>
     <section class="card"><h2>写真台帳</h2><ol>
       <li>はじめの画面の <b>写真台帳</b> を押す。</li>
@@ -572,6 +648,6 @@ details summary{cursor:pointer;font-size:14px;color:var(--muted);min-height:40px
 <div class="busy" id="busy" hidden>少し待ってください…</div>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
-<script src="app.js?v=20"></script>
+<script src="app.js?v=21"></script>
 </body>
 </html>

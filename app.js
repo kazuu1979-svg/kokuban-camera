@@ -1,10 +1,10 @@
-/* 黒板カメラ 版20（2026.10.13 一から作り直し）
+/* 黒板カメラ 版21（2026.10.15 事務所へ送る＝まとめて1つの zip。版20＝2026.10.13 一から作り直し）
    画面：はじめ・カメラ（＋選ぶ所）・黒板を入れる/直す・写真1枚・書き込み・台帳・工種の設定・渡す・工事を選ぶ・使い方
    写真は IndexedDB「kokuban-camera」の photos（版14 までと同じ場所。前の写真もそのまま読む） */
 (function(){
 'use strict';
 
-const APP_VER = '20';
+const APP_VER = '21';
 const $ = id => document.getElementById(id);
 function h(tag, props, ...kids){
   const e = document.createElement(tag);
@@ -318,7 +318,7 @@ function advanceStep(){
 let zTop = 40;
 function show(el){ el.hidden = false; el.style.zIndex = String(++zTop); document.body.classList.add('lock'); guardBack(); }
 function hide(el){ el.hidden = true; if (!anyOpen()) document.body.classList.remove('lock'); }
-const OVERLAYS = ['mark', 'photo', 'editor', 'ledger', 'kinds', 'share', 'kojiSel', 'help', 'camScreen'];
+const OVERLAYS = ['mark', 'photo', 'editor', 'office', 'ledger', 'kinds', 'share', 'kojiSel', 'help', 'camScreen'];
 const anyOpen = () => OVERLAYS.some(id => !$(id).hidden);
 let guard = false;
 function guardBack(){ if (!guard) { try { history.pushState({kokuban: 1}, ''); guard = true; } catch(e) {} } }
@@ -544,9 +544,15 @@ function updateCamInfo(){
   fixSel();
   const k = kindOf(), s = st.sel, sk = sokutenOf(s), num = numOf(s, k);
   $('cvKind').textContent = k.n;
+  const ks = kindsNow(), ki = ks.findIndex(x => x.c === k.c);
+  $('kindPrev').disabled = ki <= 0; $('kindNext').disabled = ki >= ks.length - 1;
   const pos = [sk, num, k.num ? s.repair : ''].filter(Boolean).join('　');
   $('cvPos').textContent = pos || '選んでいません（押して選ぶ）';
   $('cvPos').classList.toggle('none', !pos);
+  const byNum = posByNum(k, s), fi = FLOORS.indexOf(s.floor);
+  $('cvPosL').textContent = '測点 ›　◀▶ ' + (byNum ? '番号' : '階');
+  $('posPrev').disabled = byNum ? (s.numN || 1) <= 1 : fi <= 0;
+  $('posNext').disabled = !byNum && fi >= FLOORS.length - 1;
   $('cvStep').textContent = k.steps[s.step] || '（工程なし）';
   const done = doneSteps(curKey(), st.koji.trim());
   $('cvStepN').textContent = (s.step + 1) + '/' + k.steps.length + (done.has(k.steps[s.step]) ? '　✓撮った' : '');
@@ -586,6 +592,21 @@ function updateCamInfo(){
   const up = e => { if (!pts.has(e.pointerId)) return; pts.delete(e.pointerId); if (pts.size < 2) pinch = null; if (!pts.size) { drag = null; save(); } };
   vf.addEventListener('pointerup', up); vf.addEventListener('pointercancel', up);
 })();
+// 工種の ◀ ▶：前・次の工種（工種を選んだ時と同じく、部位・補修・工程は初めに戻す）
+function kindMove(d){
+  const ks = kindsNow(), i = ks.findIndex(x => x.c === st.sel.kind), n = i + d;
+  if (i < 0 || n < 0 || n >= ks.length) return;
+  Object.assign(st.sel, {kind: ks[n].c, part: '', repair: '', numFree: '', step: 0});
+  changed();
+}
+// 測点の ◀ ▶：番号を振る工種は番号を1つずつ、ほかは階を1つずつ
+const posByNum = (k, s) => !!(k.num && s.numOn && !(s.numFree || '').trim());
+function posMove(d){
+  const k = kindOf(), s = st.sel;
+  if (posByNum(k, s)) { const n = (s.numN || 1) + d; if (n < 1) return; s.numN = n; }
+  else { const i = FLOORS.indexOf(s.floor), n = i < 0 ? (d > 0 ? 0 : -1) : i + d; if (n < 0 || n >= FLOORS.length) return; s.floor = FLOORS[n]; }
+  changed();
+}
 function openSheet(tab){ picker.cam.tab = tab; renderPicker(picker.cam); $('camSheet').hidden = false; $('camPick').scrollTop = 0; }
 function closeSheet(){ $('camSheet').hidden = true; updateCamInfo(); }
 
@@ -911,7 +932,7 @@ function renderHome(){
   $('homeBar').hidden = selecting; $('selBar').hidden = !selecting;
   $('selMode').textContent = selecting ? '選ぶのをやめる' : '選ぶ';
   $('selInfo').textContent = selected.size ? selected.size + '枚を選んでいます' : '写真を押して選んでください';
-  ['selSend', 'selSave', 'selLedger', 'selDel'].forEach(id => $(id).disabled = !selected.size);
+  ['selSend', 'selSave', 'selLedger', 'selOffice', 'selDel'].forEach(id => $(id).disabled = !selected.size);
   $('openPend').hidden = !pend.length || !$('editor').hidden;
   $('openPend').textContent = '黒板待ち ' + pend.length + '枚';
   storeNote();
@@ -991,6 +1012,152 @@ async function savePhotos(list, msgEl){
   } catch(e) {
     setMsg(msgEl, e && e.name === 'AbortError' ? 'やめました。' : '保存できませんでした。写真を長押しして「"写真"に保存」を押してください。', false);
   }
+}
+
+/* ---------- 事務所へ送る：写真をまとめて1つのファイル（zip）に。JPEG はもう縮んでいるので圧縮しない ---------- */
+const CRC_T = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1); t[n] = c >>> 0; } return t; })();
+function crc32(u8){ let c = 0xFFFFFFFF; for (let i = 0; i < u8.length; i++) c = CRC_T[(c ^ u8[i]) & 255] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
+// entries：[{name, data（Blob か 文字）, ts}]。名前は UTF-8（日本語の名前のまま Windows で開ける）
+async function makeZip(entries, onStep){
+  const enc = new TextEncoder(), parts = [], central = [];
+  let off = 0;
+  for (let i = 0; i < entries.length; i++) {
+    const e = entries[i];
+    const blob = typeof e.data === 'string' ? new Blob([enc.encode(e.data)]) : e.data;
+    const crc = crc32(new Uint8Array(await blob.arrayBuffer())), size = blob.size;
+    const name = enc.encode(e.name), d = new Date(e.ts || Date.now());
+    const dt = ((d.getHours() << 11) | (d.getMinutes() << 5) | (d.getSeconds() >> 1)) & 0xFFFF;
+    const dd = (((d.getFullYear() - 1980) << 9) | ((d.getMonth() + 1) << 5) | d.getDate()) & 0xFFFF;
+    const lh = new DataView(new ArrayBuffer(30));
+    lh.setUint32(0, 0x04034b50, true); lh.setUint16(4, 20, true); lh.setUint16(6, 0x0800, true); lh.setUint16(8, 0, true);
+    lh.setUint16(10, dt, true); lh.setUint16(12, dd, true); lh.setUint32(14, crc, true); lh.setUint32(18, size, true); lh.setUint32(22, size, true);
+    lh.setUint16(26, name.length, true); lh.setUint16(28, 0, true);
+    parts.push(lh.buffer, name, blob);
+    const ch = new DataView(new ArrayBuffer(46));
+    ch.setUint32(0, 0x02014b50, true); ch.setUint16(4, 20, true); ch.setUint16(6, 20, true); ch.setUint16(8, 0x0800, true); ch.setUint16(10, 0, true);
+    ch.setUint16(12, dt, true); ch.setUint16(14, dd, true); ch.setUint32(16, crc, true); ch.setUint32(20, size, true); ch.setUint32(24, size, true);
+    ch.setUint16(28, name.length, true); ch.setUint32(42, off, true);
+    central.push(ch.buffer, name);
+    off += 30 + name.length + size;
+    if (onStep) onStep(i + 1, entries.length);
+  }
+  const csize = central.reduce((a, b) => a + b.byteLength, 0);
+  const end = new DataView(new ArrayBuffer(22));
+  end.setUint32(0, 0x06054b50, true); end.setUint16(8, entries.length, true); end.setUint16(10, entries.length, true);
+  end.setUint32(12, csize, true); end.setUint32(16, off, true);
+  return new Blob([...parts, ...central, end.buffer], {type: 'application/zip'});
+}
+const OFFICE_MAX = 100 * 1048576;   // 1つのファイルの大きさの目安（これを超えたら「その2」に分ける）
+const office = {scope: 'unsent', only: null, zips: null};
+function officeAll(){ const koji = st.koji.trim(); let l = photos.filter(p => p.koji === koji); if (office.only) l = l.filter(p => office.only.has(p.id)); return l; }
+function officeList(){
+  let l = officeAll();
+  if (!office.only) { if (office.scope === 'unsent') l = l.filter(p => !p.sent); else if (office.scope === 'today') l = l.filter(p => p.date === today()); }
+  return l.sort(sortKey);
+}
+const mb = n => n >= 1048576 ? (n / 1048576).toFixed(n >= 10485760 ? 0 : 1) + 'MB' : Math.max(1, Math.round(n / 1024)) + 'KB';
+function openOffice(onlyIds){
+  if (!st.koji.trim()) { openKojiSel('先に工事名を選んでください。'); return; }
+  office.only = onlyIds ? new Set(onlyIds) : null; office.zips = null;
+  if (!office.only && !officeList().length && officeAll().length) office.scope = 'all';
+  setMsg($('oMsg'), '');
+  show($('office'));
+  renderOffice();
+}
+function renderOffice(){
+  const all = officeAll(), list = officeList();
+  put($('oScope'), ...(office.only ? [h('span', {class:'note', text:'選んだ写真 ' + all.length + '枚'})]
+    : [['unsent', 'まだ送っていない（' + all.filter(p => !p.sent).length + '）'], ['today', '今日（' + all.filter(p => p.date === today()).length + '）'], ['all', '全部（' + all.length + '）']]
+      .map(([v, t]) => chip(t, office.scope === v, () => { if (office.scope === v) return; office.scope = v; office.zips = null; setMsg($('oMsg'), ''); renderOffice(); }, 'small'))));
+  const size = list.reduce((a, p) => a + (p.blob ? p.blob.size : 0), 0);
+  const byKind = []; list.forEach(p => { const e = byKind.find(x => x.kind === p.kind); if (e) e.n++; else byKind.push({kind: p.kind, n: 1}); });
+  put($('oSum'), ...(list.length ? [h('b', {text: list.length + '枚'}), '（約 ' + mb(size) + (size > OFFICE_MAX ? '・' + Math.ceil(size / OFFICE_MAX) + 'つ前後に分けます' : '') + '）', h('br'),
+    byKind.map(e => e.kind + ' ' + e.n + '枚').join('　')] : ['この絞り込みに送る写真はありません。']));
+  put($('oParts'), ...(office.zips ? office.zips.map((z, i) => h('div', {class:'opart' + (z.sent ? ' done' : '')},
+    h('span', {class:'on', text: (z.sent ? '✓ ' : '') + z.file.name + '（' + z.ids.length + '枚・' + mb(z.file.size) + '）'}),
+    h('button', {type:'button', class:'btn slim primary', text: z.sent ? 'もう一度送る' : '送る', on:{click: () => sendZip(i)}}),
+    h('button', {type:'button', class:'btn slim', text:'ファイルに保存', on:{click: () => saveZip(i)}}),
+    (z.saved && !z.sent) ? h('button', {type:'button', class:'btn slim', text:'送った印を付ける', on:{click: () => markZip(i, 'LINE で送った印を付けました。')}}) : null)) : []));
+  $('oMake').hidden = !!office.zips; $('oMake').disabled = !list.length;
+  $('oAlbumSave').textContent = '① 携帯に保存（' + list.length + '枚）';
+  $('oAlbumSave').disabled = $('oAlbumName').disabled = !list.length;
+  $('oAlbumText').textContent = list.length ? 'アルバム名：' + albumName(list) : '';
+}
+// LINE のアルバムの名前：工事名＋工種（1つの時）＋撮った日
+function albumName(list){
+  const kinds = [...new Set(list.map(p => p.kind))], ds = list.map(p => p.date).filter(Boolean).sort();
+  const md = d => { const a = String(d).split('.'); return a.length === 3 ? (+a[1]) + '/' + (+a[2]) : d; };
+  const day = ds.length ? md(ds[0]) + (ds[ds.length - 1] !== ds[0] ? '〜' + md(ds[ds.length - 1]) : '') : '';
+  return [st.koji.trim(), kinds.length === 1 ? kinds[0] : '工事写真', day].filter(Boolean).join(' ');
+}
+async function copyAlbumName(){
+  const list = officeList(); if (!list.length) return;
+  const name = albumName(list);
+  try { await navigator.clipboard.writeText(name); setMsg($('oMsg'), 'アルバム名をコピーしました：' + name, true); }
+  catch(e) { setMsg($('oMsg'), 'コピーできませんでした。下の「アルバム名：」の字を長押ししてコピーしてください。', false); }
+}
+const csvCell = v => { const s = String(v === undefined || v === null ? '' : v); return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+async function makeOffice(){
+  const list = officeList(); if (!list.length) return;
+  const koji = st.koji.trim(), kinds = kindsFor(koji);
+  // 大きさで分ける
+  const groups = []; let cur = [], curSize = 0;
+  list.forEach(p => { const s = p.blob ? p.blob.size : 0; if (cur.length && curSize + s > OFFICE_MAX) { groups.push(cur); cur = []; curSize = 0; } cur.push(p); curSize += s; });
+  if (cur.length) groups.push(cur);
+  busy(true, 'ファイルを作っています…');
+  try {
+    const zips = [], day = today().replace(/\./g, ''), made = new Date();
+    for (let g = 0; g < groups.length; g++) {
+      const ps = groups[g], used = new Set(), items = [];
+      ps.forEach((p, i) => {
+        const ki = kindIndex(p.kc, koji);
+        const kindDir = (ki < 999 ? pad(ki + 1) : '99') + '_' + (safe(p.kind) || 'その他');
+        const stepTag = pad((p.stepIdx || 0) + 1) + '.' + safe(p.step);
+        const base = [p.sokuten, p.num, p.repair].filter(Boolean).map(safe).concat(stepTag, (p.date || '').replace(/\./g, '') + '-' + (p.time || '').replace(/:/g, '')).filter(Boolean).join('_');
+        let file = '写真/' + kindDir + '/' + base + '.jpg', n = 2;
+        while (used.has(file)) file = '写真/' + kindDir + '/' + base + '_' + (n++) + '.jpg';
+        used.add(file);
+        items.push({p, file, kindDir, no: i + 1});
+      });
+      const head = ['No', '工事名', '工種', '測点', '番号', '補修', '工程', '撮影日', '時刻', '備考', '黒板の備考', '書き込み', 'ファイル'];
+      const csv = '﻿' + [head].concat(items.map(({p, file, no}) => [no, p.koji, p.kind, p.sokuten, p.num, p.repair, p.step, p.date, p.time, p.note, p.bnote, (p.marks && p.marks.length) ? 'あり' : '', file.replace(/\//g, '\\')]))
+        .map(r => r.map(csvCell).join(',')).join('\r\n') + '\r\n';
+      const meta = {app: '黒板カメラ', format: 1, ver: APP_VER, koji, made: made.toISOString(), part: g + 1, parts: groups.length,
+        kinds: kinds.map((k, i) => ({c: k.c, n: k.n, order: i + 1, steps: k.steps})),
+        photos: items.map(({p, file, kindDir}) => ({id: p.id, rev: p.rev || 1, file, kindDir, kc: p.kc, kind: p.kind, sokuten: p.sokuten || '', num: p.num || '', repair: p.repair || '',
+          step: p.step || '', stepIdx: p.stepIdx || 0, date: p.date, time: p.time, ts: p.ts, note: p.note || '', bnote: p.bnote || '', marks: (p.marks || []).length}))};
+      const entries = items.map(({p, file}) => ({name: file, data: p.blob, ts: p.ts}));
+      entries.push({name: '一覧.csv', data: csv, ts: made.getTime()}, {name: '黒板カメラ.json', data: JSON.stringify(meta, null, 1), ts: made.getTime()});
+      const blob = await makeZip(entries, (i, n) => { $('busy').textContent = 'ファイルを作っています… ' + (groups.length > 1 ? 'その' + (g + 1) + '　' : '') + i + ' / ' + n; });
+      const name = ['黒板カメラ', safe(koji), day, ps.length + '枚'].join('_') + (groups.length > 1 ? '_その' + (g + 1) : '') + '.zip';
+      zips.push({file: new File([blob], name, {type: 'application/zip'}), ids: ps.map(p => p.id), sent: false, saved: false});
+    }
+    office.zips = zips;
+    setMsg($('oMsg'), 'できました。' + (zips.length > 1 ? zips.length + 'つに分かれたので、全部「送る」を押してください。' : '「送る」→ LINE → 送り先を選んで送信してください。'), true);
+  } catch(e) { setMsg($('oMsg'), (e && e.message) || 'ファイルを作れませんでした。', false); }
+  finally { busy(false); renderOffice(); }
+}
+async function markZip(i, text){
+  const z = office.zips && office.zips[i]; if (!z) return;
+  z.sent = true;
+  for (const id of z.ids) { const p = photos.find(x => x.id === id); if (p && !p.sent) { p.sent = true; await idbPut(p); } }
+  const left = office.zips.filter(x => !x.sent).length;
+  setMsg($('oMsg'), text + (left ? '　あと ' + left + 'つ送ってください。' : ''), true);
+  renderOffice();
+}
+async function sendZip(i){
+  const z = office.zips && office.zips[i]; if (!z) return;
+  const files = [z.file];
+  try {
+    if (navigator.canShare && navigator.share && navigator.canShare({files})) { await navigator.share({files}); await markZip(i, '渡しました。'); }
+    else { download(files); z.saved = true; setMsg($('oMsg'), 'この機械では共有の画面に出せないので、保存しました。LINE のトークで ＋ → ファイル から送り、送ったら「送った印を付ける」を押してください。', true); renderOffice(); }
+  } catch(e) { setMsg($('oMsg'), e && e.name === 'AbortError' ? 'やめました。' : '共有の画面を出せませんでした。「ファイルに保存」を押して、LINE の ＋ → ファイル から送ってください。', false); }
+}
+function saveZip(i){
+  const z = office.zips && office.zips[i]; if (!z) return;
+  download([z.file]); z.saved = true;
+  setMsg($('oMsg'), '保存しました（' + (isIOS ? '「ファイル」アプリの「ダウンロード」' : 'ダウンロード') + 'に入ります）。LINE のトークで ＋ → ファイル から送り、送ったら「送った印を付ける」を押してください。', true);
+  renderOffice();
 }
 
 /* ---------- 丸・矢印・字を書く ---------- */
@@ -1330,6 +1497,7 @@ function setKoji(name){
 /* ---------- 閉じる（スマホの「戻る」でも使う） ---------- */
 const CLOSERS = {
   mark: closeMark, photo: closePhoto, editor: () => { decidedRun = 0; if (pend.length && pend[0].editOf) pend.shift(); closeEditor(); },
+  office: () => { hide($('office')); renderHome(); },
   ledger: () => { hide($('ledger')); renderHome(); }, kinds: () => { hide($('kinds')); renderHome(); }, share: () => hide($('share')),
   kojiSel: () => hide($('kojiSel')), help: () => hide($('help')), camScreen: closeCamera
 };
@@ -1342,6 +1510,11 @@ function wire(){
   $('jClose').addEventListener('click', CLOSERS.kojiSel);
   $('helpBtn').addEventListener('click', () => show($('help')));
   $('hClose').addEventListener('click', CLOSERS.help);
+  $('officeBtn').addEventListener('click', () => openOffice());
+  $('oClose').addEventListener('click', CLOSERS.office);
+  $('oMake').addEventListener('click', makeOffice);
+  $('oAlbumSave').addEventListener('click', async () => { await savePhotos(officeList(), $('oMsg')); renderOffice(); });
+  $('oAlbumName').addEventListener('click', copyAlbumName);
   $('ledgerBtn').addEventListener('click', () => openLedger());
   $('kindsBtn').addEventListener('click', openKinds);
   $('shareBtn').addEventListener('click', openShare);
@@ -1359,6 +1532,7 @@ function wire(){
   $('selSend').addEventListener('click', async () => { await sendPhotos(selList(), $('albumMsg')); renderHome(); });
   $('selSave').addEventListener('click', async () => { await savePhotos(selList(), $('albumMsg')); renderHome(); });
   $('selLedger').addEventListener('click', () => { const ids = [...selected]; endSelect(); openLedger(ids); });
+  $('selOffice').addEventListener('click', () => { const ids = [...selected]; endSelect(); openOffice(ids); });
   $('selDel').addEventListener('click', () => { $('selDelText').textContent = selected.size + '枚を消しますか？消すと元に戻せません。'; $('selDelConfirm').hidden = false; });
   $('selDelNo').addEventListener('click', () => { $('selDelConfirm').hidden = true; });
   $('selDelYes').addEventListener('click', async () => { const n = selected.size; await deletePhotos([...selected]); endSelect(); toast(n + '枚を消しました'); });
@@ -1369,6 +1543,10 @@ function wire(){
   $('lastShot').addEventListener('click', () => { if (cam.last) openPhoto(cam.last); });
   $('rowKind').addEventListener('click', () => openSheet('kind'));
   $('rowPos').addEventListener('click', () => openSheet('pos'));
+  $('kindPrev').addEventListener('click', () => kindMove(-1));
+  $('kindNext').addEventListener('click', () => kindMove(1));
+  $('posPrev').addEventListener('click', () => posMove(-1));
+  $('posNext').addEventListener('click', () => posMove(1));
   $('rowStep').addEventListener('click', () => openSheet('step'));
   $('boardBtn').addEventListener('click', () => openSheet('board'));
   $('sheetDone').addEventListener('click', closeSheet);
