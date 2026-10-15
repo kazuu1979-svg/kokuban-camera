@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>カメラの確かめ</title>
+<style>
+:root{--bg:#F4F6F4;--ink:#1B2320;--muted:#5B6661;--ok:#1F7A4D;--ng:#B3261E;--card:#fff;--line:#C8D0CB}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#131816;--ink:#E4E9E6;--muted:#9AA6A0;--ok:#6FD39E;--ng:#FF8A80;--card:#1B2220;--line:#34403B}}
+:root[data-theme="dark"]{--bg:#131816;--ink:#E4E9E6;--muted:#9AA6A0;--ok:#6FD39E;--ng:#FF8A80;--card:#1B2220;--line:#34403B}
+*{box-sizing:border-box}
+body{margin:0;padding:16px;background:var(--bg);color:var(--ink);font:17px/1.6 -apple-system,"Hiragino Sans",sans-serif}
+h1{font-size:22px;margin:0 0 6px}
+p{margin:6px 0}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin:12px 0}
+.row{display:flex;justify-content:space-between;gap:10px;border-top:1px solid var(--line);padding:8px 0}
+.row:first-child{border-top:0}
+.ok{color:var(--ok);font-weight:700}.ng{color:var(--ng);font-weight:700}
+button{width:100%;font:inherit;font-size:19px;font-weight:700;padding:16px;border-radius:10px;border:0;background:#1F4D3A;color:#fff;margin-top:6px}
+video{width:100%;border-radius:10px;background:#000;margin-top:10px;display:none}
+#result{font-size:18px;white-space:pre-wrap}
+.muted{color:var(--muted);font-size:15px}
+</style>
+</head>
+<body>
+<h1>カメラの確かめ</h1>
+<p class="muted">黒板カメラのカメラが開かない理由を調べるページです。写真は撮りません・残しません・どこにも送りません。</p>
+
+<div class="card" id="env"></div>
+
+<div class="card">
+  <button id="go">カメラを試す</button>
+  <video id="v" playsinline muted autoplay></video>
+  <p id="result" class="muted">上のボタンを押してください。「カメラへのアクセス」を聞かれたら「許可」を押します。</p>
+</div>
+
+<p class="muted">この画面を、スクリーンショット（横のボタンと音量を上げるボタンを同時に押す）で撮って送ってください。</p>
+
+<script>
+const $ = id => document.getElementById(id);
+const yes = (b, t, f) => '<span class="' + (b ? 'ok' : 'ng') + '">' + (b ? t : f) + '</span>';
+const standalone = (window.navigator.standalone === true) || (window.matchMedia && matchMedia('(display-mode: standalone)').matches);
+const ua = navigator.userAgent;
+const inLine = / Line\//i.test(ua);
+const where = inLine ? 'LINE の中' : standalone ? 'ホーム画面の黒板カメラ' : /CriOS/.test(ua) ? 'Chrome' : /Safari/.test(ua) ? 'Safari' : 'そのほか';
+const iosVer = (ua.match(/OS (\d+)_(\d+)/) || []).slice(1).join('.');
+const rows = [
+  ['開いている所', where],
+  ['iPhone の版', iosVer || '（分からない）'],
+  ['安全な接続', yes(window.isSecureContext, 'はい', 'いいえ')],
+  ['カメラの仕組み', yes(!!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia), 'ある', 'ない')]
+];
+$('env').innerHTML = rows.map(r => '<div class="row"><span>' + r[0] + '</span><span>' + r[1] + '</span></div>').join('');
+
+const MEANING = {
+  NotAllowedError: 'カメラの使用が「許可しない」になっています。',
+  NotFoundError: 'カメラが見つかりません。',
+  NotReadableError: 'ほかのアプリがカメラを使っています（通話・カメラのアプリなど）。それを閉じてからもう一度。',
+  OverconstrainedError: '黒板カメラの頼み方（画質）がこの iPhone に合いません。',
+  SecurityError: 'このページではカメラを使わせてもらえません。',
+  AbortError: 'カメラを開く途中で止まりました。',
+  TypeError: 'カメラの頼み方がまちがっています。'
+};
+async function tryOnce(label, opts){
+  try {
+    const s = await navigator.mediaDevices.getUserMedia(opts);
+    const t = s.getVideoTracks()[0], st = t && t.getSettings ? t.getSettings() : {};
+    return {ok: true, s, text: label + '：' + '開けた（' + (st.width || '?') + '×' + (st.height || '?') + '）'};
+  } catch (e) {
+    return {ok: false, text: label + '：' + '開けない\n  ' + (e && e.name) + '：' + (e && e.message) + '\n  → ' + (MEANING[e && e.name] || '理由が分かりません。')};
+  }
+}
+$('go').addEventListener('click', async () => {
+  const out = [];
+  $('result').className = '';
+  if (!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)) {
+    $('result').innerHTML = yes(false, '', 'この開き方ではカメラの仕組みがありません。') + '\n「開いている所」が LINE なら、右下の「…」→「Safari で開く」を押してから試してください。';
+    return;
+  }
+  $('result').textContent = '試しています…';
+  // 1. 黒板カメラと同じ頼み方
+  const a = await tryOnce('黒板カメラと同じ頼み方', {audio: false, video: {facingMode: {ideal: 'environment'}, width: {ideal: 4032}, height: {ideal: 3024}, aspectRatio: {ideal: 4 / 3}}});
+  out.push(a.text);
+  let stream = a.ok ? a.s : null;
+  // 2. いちばん簡単な頼み方
+  if (!a.ok) {
+    const b = await tryOnce('いちばん簡単な頼み方', {audio: false, video: true});
+    out.push(b.text);
+    if (b.ok) stream = b.s;
+  }
+  if (stream) {
+    const v = $('v'); v.srcObject = stream; v.style.display = 'block'; await v.play().catch(() => {});
+    out.push('\n下に動く映像が出ていれば、カメラは使えます。');
+    setTimeout(() => stream.getTracks().forEach(t => t.stop()), 8000);
+  }
+  $('result').textContent = out.join('\n');
+});
+</script>
+</body>
+</html>
