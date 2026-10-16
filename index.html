@@ -15,6 +15,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=BIZ+UDPGothic:wght@400;700&display=swap">
 <style>
+/* 版22：写真台帳（PDF）を外した（本人 10/16）。工事写真帳は事務所のパソコンで作る */
 /* 版20：一から作り直し。はじめの画面・カメラ・黒板を入れる・写真1枚・書き込み・台帳・工種の設定・渡す・工事を選ぶ */
 :root{
   --bg:#f3f5f2; --panel:#ffffff; --fg:#1b211d; --muted:#5d6861; --line:#d5dbd6;
@@ -52,7 +53,7 @@ textarea{min-height:120px}
 .kojibtn .empty{color:var(--warn);font-weight:700}
 .chev{color:var(--muted);font-size:14px;white-space:nowrap}
 .tools{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
-.tool.main{border-color:var(--brand);border-width:2px}
+.tool.main{border-color:var(--brand);border-width:2px;grid-column:1/-1}
 .tool.main b{color:var(--brand)}
 .tool{display:flex;flex-direction:column;align-items:flex-start;gap:2px;min-height:64px;padding:8px 10px;border-radius:12px;border:1px solid var(--line);background:var(--panel);cursor:pointer;text-align:left}
 .tool b{font-size:15px}
@@ -253,14 +254,7 @@ details summary{cursor:pointer;font-size:14px;color:var(--muted);min-height:40px
 #mkColors .tl{min-width:0;padding:0 8px;font-size:14px}
 .mktext{display:flex;gap:8px;padding:8px 12px;background:var(--dark2)}
 
-/* 台帳・設定 */
-.lrow{display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--line);cursor:pointer}
-.lrow input{width:24px;height:24px;flex:0 0 auto;accent-color:var(--brand)}
-.lrow img{width:72px;height:54px;object-fit:cover;border-radius:6px;flex:0 0 auto;background:var(--chip)}
-.lrow .lt{flex:1;min-width:0;font-size:14px;line-height:1.35}
-.lrow .lt b{display:block}
-.lrow .lno{font-size:13px;color:var(--muted);min-width:2.4em;text-align:right}
-.lrow.off{opacity:.45}
+/* 設定 */
 .krow{display:flex;align-items:center;gap:6px;padding:6px 0;border-bottom:1px solid var(--line)}
 .krow .kn{flex:1;min-width:0;font-size:16px;text-align:left;background:none;border:0;cursor:pointer;padding:8px 0;color:var(--fg);overflow-wrap:anywhere}
 .krow .kn small{color:var(--muted);font-size:12px;display:block}
@@ -306,7 +300,6 @@ details summary{cursor:pointer;font-size:14px;color:var(--muted);min-height:40px
 
   <nav class="tools" aria-label="ほかの作業">
     <button type="button" class="tool main" id="officeBtn"><b>事務所へ送る</b><small>まとめて1つのファイルでLINEへ</small></button>
-    <button type="button" class="tool" id="ledgerBtn"><b>写真台帳</b><small>PDFを作って送る</small></button>
     <button type="button" class="tool" id="kindsBtn"><b>工種・部位</b><small>この工事に合わせて足す</small></button>
     <button type="button" class="tool" id="shareBtn"><b>職人さんに渡す</b><small>同じ設定をLINEで</small></button>
   </nav>
@@ -346,9 +339,8 @@ details summary{cursor:pointer;font-size:14px;color:var(--muted);min-height:40px
     <div class="grid2">
       <button type="button" class="btn primary" id="selSend">LINEへ送る</button>
       <button type="button" class="btn" id="selSave">携帯に保存</button>
-      <button type="button" class="btn" id="selLedger">台帳にする</button>
       <button type="button" class="btn" id="selOffice" style="grid-column:1/-1">事務所へまとめて送る</button>
-      <button type="button" class="btn warn" id="selDel">消す</button>
+      <button type="button" class="btn warn" id="selDel" style="grid-column:1/-1">消す</button>
     </div>
     <div class="confirm" id="selDelConfirm" hidden>
       <div id="selDelText"></div>
@@ -449,7 +441,7 @@ details summary{cursor:pointer;font-size:14px;color:var(--muted);min-height:40px
       <button type="button" class="btn" id="phFix">黒板を直す</button>
     </div>
     <p class="msg" id="phMsg"></p>
-    <label class="f" for="phNote">台帳の備考（台帳の PDF に出ます。黒板には出ません）
+    <label class="f" for="phNote">備考（事務所へ送るファイルの一覧と工事写真帳に出ます。黒板には出ません）
       <input type="text" id="phNote" autocomplete="off" placeholder="例：シーリング厚さ 10mm 確認">
     </label>
     <button type="button" class="btn warn" id="phDel">この写真を消す</button>
@@ -518,30 +510,6 @@ details summary{cursor:pointer;font-size:14px;color:var(--muted);min-height:40px
   </div></div>
   <div class="ffoot">
     <button type="button" class="btn primary big" id="oMake">ファイルを作る</button>
-  </div>
-</div>
-
-<!-- 写真台帳 -->
-<div class="full" id="ledger" hidden role="dialog" aria-modal="true" aria-labelledby="ledTitle">
-  <div class="fhead">
-    <button type="button" class="btn slim" id="ledClose">‹ 戻る</button>
-    <h2 id="ledTitle">写真台帳（PDF）</h2>
-  </div>
-  <div class="fbody"><div class="pin">
-    <p class="note">A4縦に3枚ずつ。左に写真、右に №・工種・測点・工程・撮影日・備考。№ は工種の順 → 測点 → 工程の順に振ります。</p>
-    <label class="f" for="ledHead">表題<input type="text" id="ledHead" autocomplete="off"></label>
-    <div class="chips"><button type="button" class="chip small" id="ledCover" aria-pressed="true">表紙をつける</button></div>
-    <label class="f" for="ledMaker" id="ledMakerBox">表紙に出す施工者（空けてもよい）<input type="text" id="ledMaker" autocomplete="off" placeholder="例：〇〇株式会社"></label>
-    <div class="secth">入れる工種</div>
-    <div class="chips" id="ledKinds"></div>
-    <div class="sub"><button type="button" class="btn slim" id="ledAll">全部入れる</button><button type="button" class="btn slim" id="ledNone">全部外す</button></div>
-    <div id="ledList"></div>
-    <p class="msg" id="ledMsg"></p>
-  </div></div>
-  <div class="ffoot">
-    <span class="note" id="ledCount" style="flex:1"></span>
-    <button type="button" class="btn primary big" id="ledMake">PDFを作る</button>
-    <button type="button" class="btn primary big" id="ledSend" hidden>PDFを送る・保存</button>
   </div>
 </div>
 
@@ -619,7 +587,7 @@ details summary{cursor:pointer;font-size:14px;color:var(--muted);min-height:40px
       <li><b>LINEへ送る</b>：出てきた画面で LINE → グループを選んで送信。</li>
       <li><b>丸・矢印・字を書く</b>：指摘の所に赤い丸や矢印を書ける。書く前の写真も残るので、あとで書き直せる。</li>
       <li><b>黒板を直す</b>：選び間違えた時。撮った日時はそのまま。</li>
-      <li><b>台帳の備考</b>：台帳の PDF にだけ出る。</li>
+      <li><b>備考</b>：事務所へ送るファイルの一覧と工事写真帳に出る（黒板には出ない）。</li>
     </ol></section>
     <section class="card"><h2>事務所へ送る（まとめて）</h2><ol>
       <li>はじめの画面の <b>事務所へ送る</b> を押す（選んだ写真だけなら「選ぶ」→ <b>事務所へまとめて送る</b>）。</li>
@@ -627,11 +595,6 @@ details summary{cursor:pointer;font-size:14px;color:var(--muted);min-height:40px
       <li><b>送る</b> → LINE → 送り先を選んで送信。写真が多い時は「その1・その2」に分かれるので、全部送る。</li>
       <li>事務所のパソコンで 00_受信箱 に保存すると、現場の写真フォルダへ自動で並びます。</li>
       <li><b>LINE のアルバム</b>：同じ画面の「① 携帯に保存」「② 名前をコピー」を押してから、LINE のグループ → ≡ → アルバム → ＋ で作る。</li>
-    </ol></section>
-    <section class="card"><h2>写真台帳</h2><ol>
-      <li>はじめの画面の <b>写真台帳</b> を押す。</li>
-      <li>入れない写真は押して外す。</li>
-      <li><b>PDFを作る</b> → <b>PDFを送る・保存</b>。</li>
     </ol></section>
     <section class="card"><h2>工事に合わせる・職人さんに渡す</h2><ol>
       <li><b>工種・部位</b>：この工事だけの工種・工程・部位を足す・消す・並べ替える。</li>
@@ -648,6 +611,6 @@ details summary{cursor:pointer;font-size:14px;color:var(--muted);min-height:40px
 <div class="busy" id="busy" hidden>少し待ってください…</div>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
-<script src="app.js?v=21"></script>
+<script src="app.js?v=22"></script>
 </body>
 </html>

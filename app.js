@@ -1,10 +1,10 @@
-/* 黒板カメラ 版21（2026.10.15 事務所へ送る＝まとめて1つの zip。版20＝2026.10.13 一から作り直し）
-   画面：はじめ・カメラ（＋選ぶ所）・黒板を入れる/直す・写真1枚・書き込み・台帳・工種の設定・渡す・工事を選ぶ・使い方
+/* 黒板カメラ 版22（2026.10.16 写真台帳（PDF）を外した。版21＝2026.10.15 事務所へ送る＝まとめて1つの zip。版20＝2026.10.13 一から作り直し）
+   画面：はじめ・カメラ（＋選ぶ所）・黒板を入れる/直す・写真1枚・書き込み・工種の設定・渡す・工事を選ぶ・使い方
    写真は IndexedDB「kokuban-camera」の photos（版14 までと同じ場所。前の写真もそのまま読む） */
 (function(){
 'use strict';
 
-const APP_VER = '21';
+const APP_VER = '22';
 const $ = id => document.getElementById(id);
 function h(tag, props, ...kids){
   const e = document.createElement(tag);
@@ -318,7 +318,7 @@ function advanceStep(){
 let zTop = 40;
 function show(el){ el.hidden = false; el.style.zIndex = String(++zTop); document.body.classList.add('lock'); guardBack(); }
 function hide(el){ el.hidden = true; if (!anyOpen()) document.body.classList.remove('lock'); }
-const OVERLAYS = ['mark', 'photo', 'editor', 'office', 'ledger', 'kinds', 'share', 'kojiSel', 'help', 'camScreen'];
+const OVERLAYS = ['mark', 'photo', 'editor', 'office', 'kinds', 'share', 'kojiSel', 'help', 'camScreen'];
 const anyOpen = () => OVERLAYS.some(id => !$(id).hidden);
 let guard = false;
 function guardBack(){ if (!guard) { try { history.pushState({kokuban: 1}, ''); guard = true; } catch(e) {} } }
@@ -932,7 +932,7 @@ function renderHome(){
   $('homeBar').hidden = selecting; $('selBar').hidden = !selecting;
   $('selMode').textContent = selecting ? '選ぶのをやめる' : '選ぶ';
   $('selInfo').textContent = selected.size ? selected.size + '枚を選んでいます' : '写真を押して選んでください';
-  ['selSend', 'selSave', 'selLedger', 'selOffice', 'selDel'].forEach(id => $(id).disabled = !selected.size);
+  ['selSend', 'selSave', 'selOffice', 'selDel'].forEach(id => $(id).disabled = !selected.size);
   $('openPend').hidden = !pend.length || !$('editor').hidden;
   $('openPend').textContent = '黒板待ち ' + pend.length + '枚';
   storeNote();
@@ -1242,130 +1242,6 @@ async function saveMark(){
 }
 function closeMark(){ hide($('mark')); mk.rec = null; mk.bg = null; }
 
-/* ---------- 写真台帳（PDF） ---------- */
-let ledOff = new Set(), ledKinds = new Set(), ledPdf = null, ledOnly = null;
-function ledPhotos(){ const koji = st.koji.trim(); return photos.filter(p => p.koji === koji && (!ledOnly || ledOnly.has(p.id))).sort(sortKey); }
-const ledIncluded = () => ledPhotos().filter(p => ledKinds.has(p.kc) && !ledOff.has(p.id));
-function openLedger(onlyIds){
-  if (!st.koji.trim()) { openKojiSel('先に工事名を選んでください。'); return; }
-  ledOnly = onlyIds ? new Set(onlyIds) : null;
-  ledOff = new Set(); ledPdf = null;
-  ledKinds = new Set(ledPhotos().map(p => p.kc));
-  $('ledHead').value = st.ledHead || '工事写真';
-  $('ledMaker').value = st.ledMaker || '';
-  setMsg($('ledMsg'), '');
-  show($('ledger'));
-  renderLedger();
-}
-function renderLedger(){
-  const list = ledPhotos();
-  const kinds = [...new Set(list.map(p => p.kc))].map(c => ({c, n: (list.find(p => p.kc === c) || {}).kind}));
-  $('ledCover').setAttribute('aria-pressed', st.ledCover ? 'true' : 'false');
-  $('ledMakerBox').hidden = !st.ledCover;
-  put($('ledKinds'), ...kinds.map(k => chip(k.n + '（' + list.filter(p => p.kc === k.c).length + '）', ledKinds.has(k.c), () => { ledKinds.has(k.c) ? ledKinds.delete(k.c) : ledKinds.add(k.c); ledPdf = null; renderLedger(); }, 'small')));
-  let no = 0;
-  put($('ledList'), ...(list.length ? list.filter(p => ledKinds.has(p.kc)).map(p => {
-    const on = !ledOff.has(p.id); if (on) no++;
-    return h('label', {class:'lrow' + (on ? '' : ' off')},
-      h('input', {type:'checkbox', checked: on, on:{change: e => { e.target.checked ? ledOff.delete(p.id) : ledOff.add(p.id); ledPdf = null; renderLedger(); }}}),
-      h('img', {src: urlOf(p, 'thumb'), alt: ''}),
-      h('span', {class:'lt'}, h('b', {text: p.step}), [p.kind, [p.sokuten, p.num, p.repair].filter(Boolean).join(' ')].filter(Boolean).join('｜'), p.note ? h('span', {style:'display:block;color:var(--muted)', text: '備考：' + p.note}) : null),
-      h('span', {class:'lno', text: on ? '№' + no : '外す'}));
-  }) : [h('div', {class:'empty', text:'この工事の写真がありません。'})]));
-  const n = ledIncluded().length;
-  $('ledCount').textContent = n + '枚 → A4 ' + (Math.ceil(n / 3) + (st.ledCover && n ? 1 : 0)) + 'ページ';
-  $('ledMake').disabled = !n;
-  $('ledMake').hidden = !!ledPdf; $('ledSend').hidden = !ledPdf;
-}
-function loadScript(src){ return new Promise((res, rej) => { if (window.jspdf) return res(); const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = () => rej(new Error('台帳の部品を読み込めませんでした。電波のある所でもう一度押してください。')); document.head.appendChild(s); }); }
-// 折り返し：できるだけ空白の所で切る（S-4-3 などを途中で切らない）。長すぎる時だけ1字ずつ
-function wrapText(ctx, text, maxW){
-  const out = []; let line = '';
-  for (const tk of String(text).split(/(\s+)/)) {
-    if (!tk) continue;
-    if (ctx.measureText(line + tk).width <= maxW) { line += tk; continue; }
-    if (line.trim()) { out.push(line.trimEnd()); line = ''; }
-    if (/^\s+$/.test(tk)) continue;
-    for (const ch of tk) { if (ctx.measureText(line + ch).width > maxW && line) { out.push(line); line = ch; } else line += ch; }
-  }
-  if (line.trim()) out.push(line.trimEnd());
-  return out;
-}
-async function makeLedger(){
-  const list = ledIncluded(); if (!list.length) return;
-  st.ledHead = $('ledHead').value.trim() || '工事写真'; st.ledMaker = $('ledMaker').value.trim(); save();
-  busy(true, '台帳を作っています…');
-  try {
-    await loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js');
-    const pdf = new window.jspdf.jsPDF({unit: 'mm', format: 'a4', orientation: 'portrait', compress: true});
-    const PW = 1240, PH = 1754, M = 70, top = 150, rowH = (PH - top - 100) / 3;
-    const head = st.ledHead, koji = st.koji.trim();
-    const pages = Math.ceil(list.length / 3);
-    let first = true;
-    const newPage = () => { const cv = document.createElement('canvas'); cv.width = PW; cv.height = PH; const c = cv.getContext('2d'); c.fillStyle = '#ffffff'; c.fillRect(0, 0, PW, PH); c.fillStyle = '#111111'; c.textBaseline = 'middle'; c.textAlign = 'left'; return {cv, c}; };
-    const addPage = cv => { if (!first) pdf.addPage(); first = false; pdf.addImage(cv.toDataURL('image/jpeg', 0.85), 'JPEG', 0, 0, 210, 297); };
-    if (st.ledCover) {
-      const {cv, c} = newPage();
-      c.textAlign = 'center';
-      c.strokeStyle = '#111111'; c.lineWidth = 3; c.strokeRect(M, M, PW - 2 * M, PH - 2 * M);
-      c.font = '700 44px ' + FONT;
-      const kl = wrapText(c, koji, PW - 4 * M); kl.forEach((ln, i) => c.fillText(ln, PW / 2, 520 + i * 64));
-      fit(c, head, PW - 4 * M, 80, 700); c.fillText(head, PW / 2, 520 + kl.length * 64 + 120);
-      const dates = list.map(p => p.date).sort();
-      c.font = '400 32px ' + FONT;
-      const info = ['撮影期間　' + dates[0] + (dates[dates.length - 1] !== dates[0] ? ' 〜 ' + dates[dates.length - 1] : ''), '写真　' + list.length + '枚'];
-      info.forEach((t, i) => c.fillText(t, PW / 2, 1000 + i * 56));
-      const byKind = []; list.forEach(p => { const e = byKind.find(x => x.kind === p.kind); if (e) e.n++; else byKind.push({kind: p.kind, n: 1}); });
-      c.font = '400 26px ' + FONT;
-      byKind.slice(0, 12).forEach((e, i) => c.fillText(e.kind + '　' + e.n + '枚', PW / 2, 1150 + i * 40));
-      if (st.ledMaker) { c.font = '700 34px ' + FONT; c.fillText(st.ledMaker, PW / 2, PH - 220); }
-      c.font = '400 24px ' + FONT; c.fillText('作成日　' + today(), PW / 2, PH - 160);
-      addPage(cv);
-    }
-    for (let pg = 0; pg < pages; pg++) {
-      $('busy').textContent = '台帳を作っています… ' + (pg + 1) + ' / ' + pages + 'ページ';
-      const {cv, c} = newPage();
-      fit(c, koji + '　' + head, PW - 2 * M, 34, 700); c.fillText(koji + '　' + head, M, 80);
-      c.strokeStyle = '#111111'; c.lineWidth = 2; c.beginPath(); c.moveTo(M, 115); c.lineTo(PW - M, 115); c.stroke();
-      for (let r = 0; r < 3; r++) {
-        const i = pg * 3 + r; if (i >= list.length) break;
-        const p = list[i], y0 = top + r * rowH, bx = M, bw = 720, bh = rowH - 40;
-        const {img, url} = await loadImage(p.blob);
-        const k = Math.min(bw / img.naturalWidth, bh / img.naturalHeight), iw = img.naturalWidth * k, ih = img.naturalHeight * k;
-        c.drawImage(img, bx + (bw - iw) / 2, y0 + (bh - ih) / 2, iw, ih); URL.revokeObjectURL(url);
-        c.lineWidth = 1.5; c.strokeStyle = '#555555'; c.strokeRect(bx + (bw - iw) / 2, y0 + (bh - ih) / 2, iw, ih);
-        const tx = bx + bw + 40, tw = PW - M - tx;
-        let ty = y0 + 30;
-        c.fillStyle = '#111111'; c.font = '700 34px ' + FONT; c.fillText('№ ' + (i + 1), tx, ty); ty += 56;
-        c.lineWidth = 1; c.strokeStyle = '#999999'; c.beginPath(); c.moveTo(tx, ty - 28); c.lineTo(PW - M, ty - 28); c.stroke();
-        const rows = [['工種', p.kind], ['測点', [p.sokuten, p.num].filter(Boolean).join(' ')], ['', p.repair], ['工程', p.step], ['撮影日', p.date], ['備考', [p.bnote, p.note].filter(Boolean).join('　')]];
-        for (const [lab, val] of rows) {
-          if (!val) continue;
-          c.font = '400 22px ' + FONT; c.fillStyle = '#555555'; if (lab) c.fillText(lab, tx, ty);
-          c.font = (lab === '工程' ? '700 ' : '400 ') + (lab === '備考' ? '24px ' : '28px ') + FONT; c.fillStyle = '#111111';
-          const lns = wrapText(c, val, tw - 90).slice(0, lab === '備考' ? 4 : 3);
-          lns.forEach((ln, j) => c.fillText(ln, tx + 90, ty + j * 34));
-          ty += (lns.length - 1) * 34 + 48;
-          if (ty > y0 + bh) break;
-        }
-      }
-      c.font = '400 22px ' + FONT; c.fillStyle = '#555555'; c.textAlign = 'center'; c.fillText('- ' + (pg + 1) + ' -', PW / 2, PH - 50);
-      addPage(cv);
-    }
-    const blob = pdf.output('blob');
-    ledPdf = new File([blob], [today(), safe(koji), safe(head), list.length + '枚'].join('_') + '.pdf', {type: 'application/pdf'});
-    setMsg($('ledMsg'), 'できました（' + (pages + (st.ledCover ? 1 : 0)) + 'ページ・' + Math.round(blob.size / 1024) + 'KB）。下の「PDFを送る・保存」で LINE・メールへ送れます。', true);
-  } catch(e) { setMsg($('ledMsg'), e.message || '台帳を作れませんでした。', false); }
-  finally { busy(false); renderLedger(); }
-}
-async function sendLedger(){
-  if (!ledPdf) return;
-  try {
-    if (navigator.canShare && navigator.share && navigator.canShare({files: [ledPdf]})) { await navigator.share({files: [ledPdf]}); setMsg($('ledMsg'), '渡しました。', true); }
-    else { download([ledPdf]); setMsg($('ledMsg'), '保存しました。', true); }
-  } catch(e) { setMsg($('ledMsg'), e && e.name === 'AbortError' ? 'やめました。' : '送れませんでした。', false); }
-}
-
 /* ---------- 工種・工程・部位の設定（工事ごと） ---------- */
 let kOpen = null;
 function ensureProject(){
@@ -1498,7 +1374,7 @@ function setKoji(name){
 const CLOSERS = {
   mark: closeMark, photo: closePhoto, editor: () => { decidedRun = 0; if (pend.length && pend[0].editOf) pend.shift(); closeEditor(); },
   office: () => { hide($('office')); renderHome(); },
-  ledger: () => { hide($('ledger')); renderHome(); }, kinds: () => { hide($('kinds')); renderHome(); }, share: () => hide($('share')),
+  kinds: () => { hide($('kinds')); renderHome(); }, share: () => hide($('share')),
   kojiSel: () => hide($('kojiSel')), help: () => hide($('help')), camScreen: closeCamera
 };
 
@@ -1515,7 +1391,6 @@ function wire(){
   $('oMake').addEventListener('click', makeOffice);
   $('oAlbumSave').addEventListener('click', async () => { await savePhotos(officeList(), $('oMsg')); renderOffice(); });
   $('oAlbumName').addEventListener('click', copyAlbumName);
-  $('ledgerBtn').addEventListener('click', () => openLedger());
   $('kindsBtn').addEventListener('click', openKinds);
   $('shareBtn').addEventListener('click', openShare);
   $('kClose').addEventListener('click', CLOSERS.kinds);
@@ -1531,7 +1406,6 @@ function wire(){
   const selList = () => photos.filter(p => selected.has(p.id)).sort(sortKey);
   $('selSend').addEventListener('click', async () => { await sendPhotos(selList(), $('albumMsg')); renderHome(); });
   $('selSave').addEventListener('click', async () => { await savePhotos(selList(), $('albumMsg')); renderHome(); });
-  $('selLedger').addEventListener('click', () => { const ids = [...selected]; endSelect(); openLedger(ids); });
   $('selOffice').addEventListener('click', () => { const ids = [...selected]; endSelect(); openOffice(ids); });
   $('selDel').addEventListener('click', () => { $('selDelText').textContent = selected.size + '枚を消しますか？消すと元に戻せません。'; $('selDelConfirm').hidden = false; });
   $('selDelNo').addEventListener('click', () => { $('selDelConfirm').hidden = true; });
@@ -1588,15 +1462,6 @@ function wire(){
   $('mkSave').addEventListener('click', saveMark);
   $('mkTextOk').addEventListener('click', addText);
   $('mkText').addEventListener('keydown', e => { if (e.key === 'Enter') addText(); });
-  // 台帳
-  $('ledClose').addEventListener('click', CLOSERS.ledger);
-  $('ledCover').addEventListener('click', () => { st.ledCover = !st.ledCover; save(); ledPdf = null; renderLedger(); });
-  $('ledAll').addEventListener('click', () => { ledOff.clear(); ledKinds = new Set(ledPhotos().map(p => p.kc)); ledPdf = null; renderLedger(); });
-  $('ledNone').addEventListener('click', () => { ledPhotos().forEach(p => ledOff.add(p.id)); ledPdf = null; renderLedger(); });
-  $('ledHead').addEventListener('input', () => { ledPdf = null; renderLedger(); });
-  $('ledMaker').addEventListener('input', () => { ledPdf = null; renderLedger(); });
-  $('ledMake').addEventListener('click', makeLedger);
-  $('ledSend').addEventListener('click', sendLedger);
   // 渡す
   $('sSites').addEventListener('click', () => { st.shareSites = !st.shareSites; save(); renderShare(); });
   $('sCopy').addEventListener('click', async () => {
