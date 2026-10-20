@@ -1,10 +1,10 @@
-/* 黒板カメラ 版22（2026.10.16 写真台帳（PDF）を外した。版21＝2026.10.15 事務所へ送る＝まとめて1つの zip。版20＝2026.10.13 一から作り直し）
+/* 黒板カメラ 版23（2026.10.20 黒板に日付の欄。版22＝2026.10.16 写真台帳（PDF）を外した。版21＝2026.10.15 事務所へ送る＝まとめて1つの zip。版20＝2026.10.13 一から作り直し）
    画面：はじめ・カメラ（＋選ぶ所）・黒板を入れる/直す・写真1枚・書き込み・工種の設定・渡す・工事を選ぶ・使い方
    写真は IndexedDB「kokuban-camera」の photos（版14 までと同じ場所。前の写真もそのまま読む） */
 (function(){
 'use strict';
 
-const APP_VER = '22';
+const APP_VER = '23';
 const $ = id => document.getElementById(id);
 function h(tag, props, ...kids){
   const e = document.createElement(tag);
@@ -124,7 +124,7 @@ function fit(ctx, text, maxW, size, weight){
   do { ctx.font = (weight || 400) + ' ' + s + 'px ' + FONT; if (ctx.measureText(text).width <= maxW) break; s -= Math.max(1, s * 0.06); } while (s > 8);
   return s;
 }
-const LAYOUT = {std:{rows:3, center:300, step:92}, note:{rows:4, center:300, step:88}, big:{rows:3, center:350, step:124}};
+const LAYOUT = {std:{rows:4, center:270, step:92}, note:{rows:5, center:270, step:88}, big:{rows:4, center:330, step:124}};
 const STYLES = {white:{bg:'#ffffff', ink:'#111111', sub:'#333333', line:'#111111'}, green:{bg:'#245a3c', ink:'#ffffff', sub:'#e6efe9', line:'#ffffff'}, black:{bg:'#1d1f1e', ink:'#ffffff', sub:'#dddddd', line:'#ffffff'}};
 // 黒板の場所：pos.fx・fy＝空いている所の中の位置（0＝左・上、1＝右・下）、pos.s＝大きさ
 function boardRect(W, H, b){
@@ -140,6 +140,8 @@ function posFromXY(W, H, b, x, y){
   const fw = W - r.w - 2 * r.mg, fh = H - r.h - 2 * r.mg;
   return {fx: fw > 0 ? clamp01((x - r.mg) / fw) : 0, fy: fh > 0 ? clamp01((y - r.mg) / fh) : 0, s: b.pos.s};
 }
+// 黒板の日付：2026.10.20 → 2026年10月20日
+const jpDate = d => { const a = String(d || '').split('.'); return a.length === 3 ? a[0] + '年' + (+a[1]) + '月' + (+a[2]) + '日' : String(d || ''); };
 function drawBoard(ctx, W, H, m, b){
   const r = boardRect(W, H, b), u = r.u, x = r.x, y = r.y, bw = r.w, bh = r.h, L = r.L;
   const S = STYLES[b.style] || STYLES.white, fs = b.font || 1;
@@ -147,8 +149,8 @@ function drawBoard(ctx, W, H, m, b){
   ctx.save();
   ctx.globalAlpha = b.alpha == null ? 1 : b.alpha; ctx.fillStyle = S.bg; ctx.fillRect(x, y, bw, bh); ctx.globalAlpha = 1;
   ctx.strokeStyle = S.line; ctx.lineWidth = lw * 1.4; ctx.strokeRect(x, y, bw, bh); ctx.lineWidth = lw;
-  const rows = [['工事名', m.koji || '（工事名を選んでください）'], ['工　種', m.kind || ''], ['測　点', m.sokuten || '']];
-  if (L.rows === 4) rows.push(['備　考', m.bnote || '']);
+  const rows = [['工事名', m.koji || '（工事名を選んでください）'], ['工　種', m.kind || ''], ['測　点', m.sokuten || ''], ['日　付', jpDate(m.date)]];
+  if (L.rows === 5) rows.push(['備　考', m.bnote || '']);
   ctx.fillStyle = S.ink; ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
   rows.forEach((row, i) => {
     const ry = y + rowH * i;
@@ -164,14 +166,11 @@ function drawBoard(ctx, W, H, m, b){
   lines.push([m.step || '', (lines.length ? L.step * 0.78 : L.step) * u * fs, 700]);
   ctx.textAlign = 'center';
   let sizes = lines.map(l => fit(ctx, l[0], tw, l[1], l[2]));
-  const avail = bh2 - 44 * u;
+  const avail = bh2 - 24 * u;
   let total = sizes.reduce((a, s) => a + s * 1.22, 0);
   if (total > avail) { const k = avail / total; sizes = sizes.map(s => s * k); total = avail; }
-  let ty = by + (bh2 - 34 * u - total) / 2;
+  let ty = by + (bh2 - total) / 2;
   lines.forEach((l, i) => { ctx.font = l[2] + ' ' + sizes[i] + 'px ' + FONT; ctx.fillText(l[0], cx, ty + sizes[i] * 0.61); ty += sizes[i] * 1.22; });
-  ctx.textAlign = 'left';
-  const foot = (m.date || '') + ' ' + (m.time || '').slice(0, 5);
-  fit(ctx, foot, tw, 24 * u * Math.min(fs, 1.15), 400); ctx.fillStyle = S.sub; ctx.fillText(foot, x + 16 * u, y + bh - 20 * u);
   ctx.restore();
 }
 
