@@ -4,7 +4,7 @@
 (function(){
 'use strict';
 
-const APP_VER = '23';
+const APP_VER = '24';
 const $ = id => document.getElementById(id);
 function h(tag, props, ...kids){
   const e = document.createElement(tag);
@@ -39,6 +39,23 @@ const DEFAULT_KINDS = [
   {c:'B', n:'防水工事', steps:['施工前','ケレン・清掃','プライマー塗布','1層目','2層目','トップコート','施工後'], parts:['屋上 平場','屋上 立上り','笠木','バルコニー床','廊下・階段床','庇天端','側溝・巾木','ドレン廻り']},
   {c:'Z', n:'その他工事', steps:['施工前','施工中','施工後'], parts:[]}
 ];
+// 補修項目ごとの工程（会社の標準の工法の順）。補修項目を選ぶと、工程はこの順になる。選んでいない時は工種の工程
+const REPAIR_STEPS = {
+  'ひび割れ補修0.3mm未満':   ['施工前','清掃','フィラー擦り込み','施工後'],
+  'ひび割れ補修0.3mm以上':   ['施工前','Uカット','清掃','プライマー塗布','シール材充填','樹脂モルタル充填','施工後'],
+  'モルタル浮き補修':        ['施工前','穿孔','孔内清掃','樹脂注入','ピン挿入','穴埋め','施工後'],
+  '欠損部補修':              ['施工前','斫り','清掃','プライマー塗布','樹脂モルタル充填','施工後'],
+  '鉄筋爆裂補修':            ['施工前','斫り','鉄筋ケレン','清掃','防錆処理','樹脂モルタル充填','施工後'],
+  '脆弱塗膜補修':            ['施工前','脆弱塗膜除去','清掃','下地調整','施工後'],
+  'タイル面 ひび割れ補修':   ['施工前','カッター入れ','タイル撤去','下地処理','タイル張り','目地詰め','施工後'],
+  'タイル面 浮き補修':       ['施工前','穿孔','孔内清掃','樹脂注入','ピン挿入','目地仕上げ','施工後'],
+  'タイル面 目地材劣化部補修': ['施工前','目地撤去','清掃','目地詰め','施工後']
+};
+function stepsOf(k, repair){
+  const r = k.num && repair ? ((k.repSteps && k.repSteps[repair]) || REPAIR_STEPS[repair]) : null;
+  return Array.isArray(r) && r.length ? r : k.steps;
+}
+const curSteps = () => stepsOf(kindOf(), st.sel.repair);
 const FACES = ['北面','南面','東面','西面','屋上','共用部','内部'];
 const FLOORS = ['1階','2階','3階','4階','5階','6階','7階','8階','9階','10階','11階','12階','13階','14階','15階','屋上','全体'];
 const FACE_L = {'北面':'N', '南面':'S', '東面':'E', '西面':'W', '屋上':'R'};
@@ -86,7 +103,8 @@ function kindOf(sel){ const list = kindsNow(); return list.find(k => k.c === (se
 function fixSel(){
   const k = kindOf();
   if (st.sel.kind !== k.c) { st.sel.kind = k.c; st.sel.step = 0; st.sel.part = ''; st.sel.repair = ''; }
-  if (st.sel.step >= k.steps.length) st.sel.step = Math.max(0, k.steps.length - 1);
+  const n = curSteps().length;
+  if (st.sel.step >= n) st.sel.step = Math.max(0, n - 1);
   if (st.sel.step < 0) st.sel.step = 0;
 }
 const sokutenOf = sel => [sel.face, sel.floor, (sel.part || '').trim()].filter(Boolean).join(' ');
@@ -102,7 +120,7 @@ function stamp(d){ return {date: d.getFullYear() + '.' + pad(d.getMonth() + 1) +
 function metaNow(t, board){
   const k = kindOf(), s = st.sel;
   return Object.assign({koji: st.koji.trim(), kc: k.c, kind: k.n, sokuten: sokutenOf(s), repair: k.num ? (s.repair || '') : '', num: numOf(s, k),
-    step: k.steps[s.step] || '', stepIdx: s.step, bnote: (board || st.board).layout === 'note' ? (s.note || '').trim() : ''}, t || stamp(new Date()));
+    step: stepsOf(k, s.repair)[s.step] || '', stepIdx: s.step, bnote: (board || st.board).layout === 'note' ? (s.note || '').trim() : ''}, t || stamp(new Date()));
 }
 const groupKey = r => [r.kc, r.sokuten || '', r.repair || '', r.num || ''].join('|');
 function curKey(){ const m = metaNow(); return groupKey(m); }
@@ -309,7 +327,7 @@ function learnSel(){
 }
 function advanceStep(){
   const k = kindOf();
-  if (st.sel.step < k.steps.length - 1) st.sel.step++;
+  if (st.sel.step < curSteps().length - 1) st.sel.step++;
   else if (k.num && !(st.sel.numFree || '').trim() && st.sel.numOn) { st.sel.numN = (st.sel.numN || 1) + 1; st.sel.step = 0; toast('施工後まで撮ったので、番号を ' + st.sel.numN + ' に進めました'); }
 }
 
@@ -552,11 +570,12 @@ function updateCamInfo(){
   $('cvPosL').textContent = '測点 ›　◀▶ ' + (byNum ? '番号' : '階');
   $('posPrev').disabled = byNum ? (s.numN || 1) <= 1 : fi <= 0;
   $('posNext').disabled = !byNum && fi >= FLOORS.length - 1;
-  $('cvStep').textContent = k.steps[s.step] || '（工程なし）';
+  const steps = curSteps();
+  $('cvStep').textContent = steps[s.step] || '（工程なし）';
   const done = doneSteps(curKey(), st.koji.trim());
-  $('cvStepN').textContent = (s.step + 1) + '/' + k.steps.length + (done.has(k.steps[s.step]) ? '　✓撮った' : '');
+  $('cvStepN').textContent = (s.step + 1) + '/' + steps.length + (done.has(steps[s.step]) ? '　✓撮った' : '');
   $('stepPrev').disabled = s.step <= 0;
-  $('stepNext').disabled = s.step >= k.steps.length - 1;
+  $('stepNext').disabled = s.step >= steps.length - 1;
 }
 // 黒板を指で動かす・黒板の上を2本指＝黒板の大きさ・黒板の外を2本指＝カメラの拡大
 (function(){
@@ -657,7 +676,8 @@ const PICK = {
       h('div', {class:'inrow'}, inp, mic), micNote
     ];
     if (k.num) {
-      if (k.repairs && k.repairs.length) out.push(secth('補修項目'), row(k.repairs, s.repair, v => s.repair = v));
+      if (k.repairs && k.repairs.length) out.push(secth('補修項目'), row(k.repairs, s.repair, v => { if (v !== s.repair) s.step = 0; s.repair = v; }),
+        h('p', {class:'note', text:'補修項目を選ぶと、工程がその補修の順（例 Uカット → 清掃 → プライマー塗布 …）に変わります。'}));
       out.push(secth('番号'),
         h('div', {class:'numrow'},
           h('button', {type:'button', class:'nb', 'aria-label':'番号を1つ戻す', text:'－', on:{click: () => { s.numFree = ''; s.numOn = true; s.numN = Math.max(1, (s.numN || 1) - 1); changed(); }}}),
@@ -674,8 +694,8 @@ const PICK = {
   step(p){
     const k = kindOf(), done = doneSteps(curKey(), st.koji.trim());
     return [
-      h('p', {class:'note', text:'撮ると次の工程へ進みます。✓ は、この測点で撮った工程です。'}),
-      h('div', {class:'steplist'}, k.steps.map((name, i) => h('button', {type:'button', class:'chip', 'aria-pressed': i === st.sel.step,
+      h('p', {class:'note', text:'撮ると次の工程へ進みます。✓ は、この測点で撮った工程です。' + (k.num && st.sel.repair && stepsOf(k, st.sel.repair) !== k.steps ? '（「' + st.sel.repair + '」の工程）' : '')}),
+      h('div', {class:'steplist'}, curSteps().map((name, i) => h('button', {type:'button', class:'chip', 'aria-pressed': i === st.sel.step,
         on:{click: () => { st.sel.step = i; changed(); if (p === picker.cam) closeSheet(); }}},
         h('span', {text: (i + 1) + '. ' + name}), done.has(name) ? h('span', {class:'ok', text:'✓ 撮った'}) : h('span', {class:'n', text:'まだ'}))))
     ];
@@ -907,7 +927,7 @@ function renderHome(){
     const p0 = g.items[0];
     const allInGroup = photos.filter(p => p.koji === koji && groupKey(p) === g.key);
     const done = new Set(allInGroup.map(p => p.step));
-    const steps = k ? k.steps : [...done];
+    const steps = k ? stepsOf(k, p0.repair) : [...done];
     const nextIdx = steps.findIndex(s => !done.has(s));
     const head = h('div', {class:'ghead'}, h('b', {text: [p0.sokuten || '（測点なし）', p0.num, p0.repair].filter(Boolean).join(' ')}), h('span', {class:'cnt', text: allInGroup.length + '枚'}));
     if (k && nextIdx >= 0 && !selecting) head.append(h('button', {type:'button', class:'btn slim primary', text:'続きを撮る（' + steps[nextIdx] + '）', on:{click: () => {
@@ -1122,7 +1142,7 @@ async function makeOffice(){
       const csv = '﻿' + [head].concat(items.map(({p, file, no}) => [no, p.koji, p.kind, p.sokuten, p.num, p.repair, p.step, p.date, p.time, p.note, p.bnote, (p.marks && p.marks.length) ? 'あり' : '', file.replace(/\//g, '\\')]))
         .map(r => r.map(csvCell).join(',')).join('\r\n') + '\r\n';
       const meta = {app: '黒板カメラ', format: 1, ver: APP_VER, koji, made: made.toISOString(), part: g + 1, parts: groups.length,
-        kinds: kinds.map((k, i) => ({c: k.c, n: k.n, order: i + 1, steps: k.steps})),
+        kinds: kinds.map((k, i) => ({c: k.c, n: k.n, order: i + 1, steps: k.steps, repSteps: k.num ? Object.fromEntries((k.repairs || []).map(r => [r, stepsOf(k, r)])) : undefined})),
         photos: items.map(({p, file, kindDir}) => ({id: p.id, rev: p.rev || 1, file, kindDir, kc: p.kc, kind: p.kind, sokuten: p.sokuten || '', num: p.num || '', repair: p.repair || '',
           step: p.step || '', stepIdx: p.stepIdx || 0, date: p.date, time: p.time, ts: p.ts, note: p.note || '', bnote: p.bnote || '', marks: (p.marks || []).length}))};
       const entries = items.map(({p, file}) => ({name: file, data: p.blob, ts: p.ts}));
@@ -1287,7 +1307,7 @@ function renderKinds(){
       const nameIn = h('input', {type:'text', autocomplete:'off', value: k.n, on:{change: e => { const v = e.target.value.trim(); if (v) { arr().n = v; done(); } }}});
       return h('div', {}, row, h('div', {class:'kdetail'},
         h('label', {class:'f'}, '工種の名前（黒板に出ます）', nameIn),
-        ...itemList('工程', arr().steps, done, true),
+        ...itemList(k.num ? '工程（補修項目を選んでいない時）' : '工程', arr().steps, done, true),
         ...itemList('部位', arr().parts, done),
         h('div', {class:'chips'}, chip('番号・補修項目を使う（下地補修のように）', !!k.num, () => { arr().num = !k.num; if (!arr().repairs) arr().repairs = []; done(); }, 'small')),
         ...(k.num ? itemList('補修項目', arr().repairs || (arr().repairs = []), done) : [])));
@@ -1424,7 +1444,7 @@ function wire(){
   $('boardBtn').addEventListener('click', () => openSheet('board'));
   $('sheetDone').addEventListener('click', closeSheet);
   $('stepPrev').addEventListener('click', () => { st.sel.step = Math.max(0, st.sel.step - 1); changed(); });
-  $('stepNext').addEventListener('click', () => { st.sel.step = Math.min(kindOf().steps.length - 1, st.sel.step + 1); changed(); });
+  $('stepNext').addEventListener('click', () => { st.sel.step = Math.min(curSteps().length - 1, st.sel.step + 1); changed(); });
   $('rotBtn').addEventListener('click', () => { st.rotMode = {auto: 'land', land: 'portrait', portrait: 'auto'}[st.rotMode] || 'auto'; save(); boardSig = ''; });
   $('torchBtn').addEventListener('click', () => {
     if (!cam.track) return; cam.torchOn = !cam.torchOn;

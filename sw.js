@@ -1,6 +1,6 @@
 // 黒板カメラ：電波が無くても開けるように、画面の部品をスマホに置いておく
-const CACHE = 'kokuban-camera-23';
-const SHELL = ['./', './index.html', './app.js?v=23', './manifest.webmanifest', './icon-192.png', './icon-512.png'];
+const CACHE = 'kokuban-camera-24';
+const SHELL = ['./', './index.html', './app.js?v=24', './manifest.webmanifest', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
