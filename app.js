@@ -4,7 +4,7 @@
 (function(){
 'use strict';
 
-const APP_VER = '24';
+const APP_VER = '25';
 const $ = id => document.getElementById(id);
 function h(tag, props, ...kids){
   const e = document.createElement(tag);
@@ -30,13 +30,18 @@ const put = (el, ...kids) => el.replaceChildren(...kids.flat(Infinity).filter(k 
 /* ---------- 選ぶ物の最初の一覧（過去の工事写真から作った案。工事ごとに直せる） ---------- */
 const DEFAULT_KINDS = [
   {c:'A', n:'仮設足場工事', steps:['施工前','組立中','組立完了','是正前','是正後','解体中','解体完了'], parts:['外壁足場','養生シート','朝顔','昇降階段','壁つなぎ','是正箇所']},
-  {c:'W', n:'洗浄作業', steps:['施工前','洗剤塗布','高圧水洗浄','施工後'], parts:['外壁タイル','外壁','共用廊下','階段・踊り場','屋上 平場','側溝・巾木','天井']},
+  {c:'W', n:'洗浄作業', steps:['施工前','洗剤塗布','高圧水洗浄','施工後'], parts:['外壁タイル','外壁','共用廊下','階段・踊り場','屋上 平場','側溝・巾木','天井'],
+   repairs:['高圧水洗浄','タイル洗浄（洗剤）']},
   {c:'K', n:'下地補修工事', num:true, steps:['施工前','カッター入れ','斫り','清掃','注入','目地詰め','樹脂モルタル充填','防錆処理','タイル張り','施工後'], parts:['外壁','バルコニー内壁','手摺壁','手摺天端','上裏','庇','梁・柱','タイル面'],
    repairs:['ひび割れ補修0.3mm未満','ひび割れ補修0.3mm以上','モルタル浮き補修','欠損部補修','鉄筋爆裂補修','脆弱塗膜補修','タイル面 ひび割れ補修','タイル面 浮き補修','タイル面 目地材劣化部補修']},
-  {c:'S', n:'シーリング工事', steps:['施工前','撤去後','養生','プライマー塗布','シール材充填','ヘラ仕上げ','施工後'], parts:['建具廻り','外壁目地','外壁タイル目地','ベントキャップ廻り','ガラリ廻り','笠木','手摺根元','設備貫通部','PS扉廻り']},
-  {c:'T', n:'塗装工事', steps:['施工前','下塗り','中塗り','上塗り','肌合わせ','施工後'], parts:['外壁','上裏（軒天）','バルコニー天井','共用廊下天井','階段・踊り場','手摺壁内側','庇','ボーダー','巾木']},
-  {c:'F', n:'鉄部塗装工事', steps:['施工前','ケレン','錆止め','中塗り','上塗り','施工後'], parts:['手摺','鉄骨階段','玄関扉・枠','PS扉','メーターボックス扉','隔て板','竪樋','ゴミ置場扉','EV機械室扉']},
-  {c:'B', n:'防水工事', steps:['施工前','ケレン・清掃','プライマー塗布','1層目','2層目','トップコート','施工後'], parts:['屋上 平場','屋上 立上り','笠木','バルコニー床','廊下・階段床','庇天端','側溝・巾木','ドレン廻り']},
+  {c:'S', n:'シーリング工事', steps:['施工前','撤去後','養生','プライマー塗布','シール材充填','ヘラ仕上げ','施工後'], parts:['建具廻り','外壁目地','外壁タイル目地','ベントキャップ廻り','ガラリ廻り','笠木','手摺根元','設備貫通部','PS扉廻り'],
+   repairs:['打替え','新規打ち（入隅・端末）']},
+  {c:'T', n:'塗装工事', steps:['施工前','下塗り','中塗り','上塗り','肌合わせ','施工後'], parts:['外壁','上裏（軒天）','バルコニー天井','共用廊下天井','階段・踊り場','手摺壁内側','庇','ボーダー','巾木'],
+   repairs:['外壁塗装（下塗り＋2回）','外壁塗装（肌合わせあり）','天井・上裏塗装']},
+  {c:'F', n:'鉄部塗装工事', steps:['施工前','ケレン','錆止め','中塗り','上塗り','施工後'], parts:['手摺','鉄骨階段','玄関扉・枠','PS扉','メーターボックス扉','隔て板','竪樋','ゴミ置場扉','EV機械室扉'],
+   repairs:['鉄部（錆止め＋2回）','亜鉛めっき面（プライマー＋2回）']},
+  {c:'B', n:'防水工事', steps:['施工前','ケレン・清掃','プライマー塗布','1層目','2層目','トップコート','施工後'], parts:['屋上 平場','屋上 立上り','笠木','バルコニー床','廊下・階段床','庇天端','側溝・巾木','ドレン廻り'],
+   repairs:['ウレタン塗膜防水 密着','ウレタン塗膜防水 通気緩衝','アスファルト防水（トーチ）','塩ビシート防水','防滑性塩ビシート貼（長尺）','改修用ドレン設置']},
   {c:'Z', n:'その他工事', steps:['施工前','施工中','施工後'], parts:[]}
 ];
 // 補修項目ごとの工程（会社の標準の工法の順）。補修項目を選ぶと、工程はこの順になる。選んでいない時は工種の工程
@@ -49,10 +54,33 @@ const REPAIR_STEPS = {
   '脆弱塗膜補修':            ['施工前','脆弱塗膜除去','清掃','下地調整','施工後'],
   'タイル面 ひび割れ補修':   ['施工前','カッター入れ','タイル撤去','下地処理','タイル張り','目地詰め','施工後'],
   'タイル面 浮き補修':       ['施工前','穿孔','孔内清掃','樹脂注入','ピン挿入','目地仕上げ','施工後'],
-  'タイル面 目地材劣化部補修': ['施工前','目地撤去','清掃','目地詰め','施工後']
+  'タイル面 目地材劣化部補修': ['施工前','目地撤去','清掃','目地詰め','施工後'],
+  // 下地補修のほかの工種の「仕様」（名前は日本財託の見積の雛形の項目に合わせた）
+  '高圧水洗浄':              ['施工前','高圧水洗浄','施工後'],
+  'タイル洗浄（洗剤）':      ['施工前','洗剤塗布','ブラシ洗い','水洗い','施工後'],
+  '打替え':                  ['施工前','既存撤去','清掃','養生','バックアップ材','プライマー塗布','シール材充填','ヘラ仕上げ','養生撤去','施工後'],
+  '新規打ち（入隅・端末）':  ['施工前','清掃','養生','プライマー塗布','シール材充填','ヘラ仕上げ','養生撤去','施工後'],
+  '外壁塗装（下塗り＋2回）': ['施工前','下塗り','中塗り','上塗り','施工後'],
+  '外壁塗装（肌合わせあり）': ['施工前','肌合わせ','下塗り','中塗り','上塗り','施工後'],
+  '天井・上裏塗装':          ['施工前','下塗り','上塗り','施工後'],
+  '鉄部（錆止め＋2回）':     ['施工前','ケレン','錆止め','中塗り','上塗り','施工後'],
+  '亜鉛めっき面（プライマー＋2回）': ['施工前','ケレン','密着プライマー','中塗り','上塗り','施工後'],
+  'ウレタン塗膜防水 密着':   ['施工前','ケレン・清掃','プライマー塗布','1層目','2層目','トップコート','施工後'],
+  'ウレタン塗膜防水 通気緩衝': ['施工前','ケレン・清掃','プライマー塗布','通気緩衝シート張り','脱気筒取付','1層目','2層目','トップコート','施工後'],
+  'アスファルト防水（トーチ）': ['施工前','既存防水層撤去','ケレン・清掃','プライマー塗布','ルーフィング張り','端末処理','施工後'],
+  '塩ビシート防水':          ['施工前','ケレン・清掃','絶縁シート敷き','固定金具取付','シート張り','端末シール','施工後'],
+  '防滑性塩ビシート貼（長尺）': ['施工前','既存シート撤去','下地調整','接着剤塗布','シート張り','端末シール','施工後'],
+  '改修用ドレン設置':        ['施工前','清掃','改修用ドレン取付','防水層との取合い','施工後']
 };
+// 工種の項目（下地補修は「補修項目」、ほかは「仕様」）。前に工事ごとに直した工種で項目が無い物は、最初の一覧の項目を使う
+function itemsOf(k){
+  if (Array.isArray(k.repairs)) return k.repairs;
+  const d = DEFAULT_KINDS.find(x => x.c === k.c);
+  return (d && d.repairs) || [];
+}
+const itemLabel = k => k.num ? '補修項目' : '仕様';
 function stepsOf(k, repair){
-  const r = k.num && repair ? ((k.repSteps && k.repSteps[repair]) || REPAIR_STEPS[repair]) : null;
+  const r = repair && itemsOf(k).includes(repair) ? ((k.repSteps && k.repSteps[repair]) || REPAIR_STEPS[repair]) : null;
   return Array.isArray(r) && r.length ? r : k.steps;
 }
 const curSteps = () => stepsOf(kindOf(), st.sel.repair);
@@ -119,7 +147,7 @@ function numOf(sel, k){
 function stamp(d){ return {date: d.getFullYear() + '.' + pad(d.getMonth() + 1) + '.' + pad(d.getDate()), time: pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds()), ts: d.getTime()}; }
 function metaNow(t, board){
   const k = kindOf(), s = st.sel;
-  return Object.assign({koji: st.koji.trim(), kc: k.c, kind: k.n, sokuten: sokutenOf(s), repair: k.num ? (s.repair || '') : '', num: numOf(s, k),
+  return Object.assign({koji: st.koji.trim(), kc: k.c, kind: k.n, sokuten: sokutenOf(s), repair: itemsOf(k).includes(s.repair) ? s.repair : '', num: numOf(s, k),
     step: stepsOf(k, s.repair)[s.step] || '', stepIdx: s.step, bnote: (board || st.board).layout === 'note' ? (s.note || '').trim() : ''}, t || stamp(new Date()));
 }
 const groupKey = r => [r.kc, r.sokuten || '', r.repair || '', r.num || ''].join('|');
@@ -563,7 +591,7 @@ function updateCamInfo(){
   $('cvKind').textContent = k.n;
   const ks = kindsNow(), ki = ks.findIndex(x => x.c === k.c);
   $('kindPrev').disabled = ki <= 0; $('kindNext').disabled = ki >= ks.length - 1;
-  const pos = [sk, num, k.num ? s.repair : ''].filter(Boolean).join('　');
+  const pos = [sk, num, itemsOf(k).includes(s.repair) ? s.repair : ''].filter(Boolean).join('　');
   $('cvPos').textContent = pos || '選んでいません（押して選ぶ）';
   $('cvPos').classList.toggle('none', !pos);
   const byNum = posByNum(k, s), fi = FLOORS.indexOf(s.floor);
@@ -675,9 +703,10 @@ const PICK = {
       secth('部位'), parts.length ? row(parts, s.part, v => s.part = v, false, mine) : null,
       h('div', {class:'inrow'}, inp, mic), micNote
     ];
+    const items = itemsOf(k);
+    if (items.length) out.push(secth(itemLabel(k)), row(items, s.repair, v => { if (v !== s.repair) s.step = 0; s.repair = v; }),
+      h('p', {class:'note', text: itemLabel(k) + 'を選ぶと、工程がその' + (k.num ? '補修' : '仕様') + 'の順に変わります。'}));
     if (k.num) {
-      if (k.repairs && k.repairs.length) out.push(secth('補修項目'), row(k.repairs, s.repair, v => { if (v !== s.repair) s.step = 0; s.repair = v; }),
-        h('p', {class:'note', text:'補修項目を選ぶと、工程がその補修の順（例 Uカット → 清掃 → プライマー塗布 …）に変わります。'}));
       out.push(secth('番号'),
         h('div', {class:'numrow'},
           h('button', {type:'button', class:'nb', 'aria-label':'番号を1つ戻す', text:'－', on:{click: () => { s.numFree = ''; s.numOn = true; s.numN = Math.max(1, (s.numN || 1) - 1); changed(); }}}),
@@ -694,7 +723,7 @@ const PICK = {
   step(p){
     const k = kindOf(), done = doneSteps(curKey(), st.koji.trim());
     return [
-      h('p', {class:'note', text:'撮ると次の工程へ進みます。✓ は、この測点で撮った工程です。' + (k.num && st.sel.repair && stepsOf(k, st.sel.repair) !== k.steps ? '（「' + st.sel.repair + '」の工程）' : '')}),
+      h('p', {class:'note', text:'撮ると次の工程へ進みます。✓ は、この測点で撮った工程です。' + (st.sel.repair && stepsOf(k, st.sel.repair) !== k.steps ? '（「' + st.sel.repair + '」の工程）' : '')}),
       h('div', {class:'steplist'}, curSteps().map((name, i) => h('button', {type:'button', class:'chip', 'aria-pressed': i === st.sel.step,
         on:{click: () => { st.sel.step = i; changed(); if (p === picker.cam) closeSheet(); }}},
         h('span', {text: (i + 1) + '. ' + name}), done.has(name) ? h('span', {class:'ok', text:'✓ 撮った'}) : h('span', {class:'n', text:'まだ'}))))
@@ -1142,7 +1171,7 @@ async function makeOffice(){
       const csv = '﻿' + [head].concat(items.map(({p, file, no}) => [no, p.koji, p.kind, p.sokuten, p.num, p.repair, p.step, p.date, p.time, p.note, p.bnote, (p.marks && p.marks.length) ? 'あり' : '', file.replace(/\//g, '\\')]))
         .map(r => r.map(csvCell).join(',')).join('\r\n') + '\r\n';
       const meta = {app: '黒板カメラ', format: 1, ver: APP_VER, koji, made: made.toISOString(), part: g + 1, parts: groups.length,
-        kinds: kinds.map((k, i) => ({c: k.c, n: k.n, order: i + 1, steps: k.steps, repSteps: k.num ? Object.fromEntries((k.repairs || []).map(r => [r, stepsOf(k, r)])) : undefined})),
+        kinds: kinds.map((k, i) => ({c: k.c, n: k.n, order: i + 1, steps: k.steps, repSteps: itemsOf(k).length ? Object.fromEntries(itemsOf(k).map(r => [r, stepsOf(k, r)])) : undefined})),
         photos: items.map(({p, file, kindDir}) => ({id: p.id, rev: p.rev || 1, file, kindDir, kc: p.kc, kind: p.kind, sokuten: p.sokuten || '', num: p.num || '', repair: p.repair || '',
           step: p.step || '', stepIdx: p.stepIdx || 0, date: p.date, time: p.time, ts: p.ts, note: p.note || '', bnote: p.bnote || '', marks: (p.marks || []).length}))};
       const entries = items.map(({p, file}) => ({name: file, data: p.blob, ts: p.ts}));
@@ -1307,10 +1336,10 @@ function renderKinds(){
       const nameIn = h('input', {type:'text', autocomplete:'off', value: k.n, on:{change: e => { const v = e.target.value.trim(); if (v) { arr().n = v; done(); } }}});
       return h('div', {}, row, h('div', {class:'kdetail'},
         h('label', {class:'f'}, '工種の名前（黒板に出ます）', nameIn),
-        ...itemList(k.num ? '工程（補修項目を選んでいない時）' : '工程', arr().steps, done, true),
+        ...itemList(itemsOf(k).length ? '工程（' + itemLabel(k) + 'を選んでいない時）' : '工程', arr().steps, done, true),
         ...itemList('部位', arr().parts, done),
-        h('div', {class:'chips'}, chip('番号・補修項目を使う（下地補修のように）', !!k.num, () => { arr().num = !k.num; if (!arr().repairs) arr().repairs = []; done(); }, 'small')),
-        ...(k.num ? itemList('補修項目', arr().repairs || (arr().repairs = []), done) : [])));
+        h('div', {class:'chips'}, chip('番号を使う（下地補修のように）', !!k.num, () => { arr().num = !k.num; done(); }, 'small')),
+        ...itemList(itemLabel(k), arr().repairs || (arr().repairs = itemsOf(k).slice()), done)));
     })),
     secth('工種を足す'),
     h('div', {class:'inrow'}, newIn, h('button', {type:'button', class:'btn slim primary', text:'足す', on:{click: addKind}})),
@@ -1325,7 +1354,7 @@ const b64e = s => { const bytes = new TextEncoder().encode(s); let bin = ''; byt
 const b64d = s => { s = s.replace(/-/g, '+').replace(/_/g, '/'); while (s.length % 4) s += '='; const bin = atob(s); return new TextDecoder().decode(Uint8Array.from(bin, c => c.charCodeAt(0))); };
 const baseUrl = () => location.href.split('#')[0].split('?')[0];
 function shareLink(){
-  const cfg = {v: 1, koji: st.koji.trim(), kinds: kindsNow().map(k => ({c: k.c, n: k.n, steps: k.steps, parts: k.parts, num: k.num ? 1 : undefined, repairs: k.num ? k.repairs : undefined}))};
+  const cfg = {v: 1, koji: st.koji.trim(), kinds: kindsNow().map(k => ({c: k.c, n: k.n, steps: k.steps, parts: k.parts, num: k.num ? 1 : undefined, repairs: itemsOf(k).length ? itemsOf(k) : undefined}))};
   if (st.shareSites && st.sites.length) cfg.sites = st.sites;
   return baseUrl() + '#cfg=' + b64e(JSON.stringify(cfg));
 }
@@ -1342,7 +1371,7 @@ function renderShare(){
 const strs = (a, max) => Array.isArray(a) ? a.map(x => String(x).trim().slice(0, 60)).filter(Boolean).slice(0, max || 60) : [];
 function cleanKinds(arr){
   if (!Array.isArray(arr)) return null;
-  const out = arr.slice(0, 40).map((k, i) => k && typeof k === 'object' && String(k.n || '').trim() ? {c: String(k.c || 'U' + i).slice(0, 20), n: String(k.n).trim().slice(0, 40), steps: strs(k.steps, 30), parts: strs(k.parts, 80), num: !!k.num || undefined, repairs: k.num ? strs(k.repairs, 40) : undefined} : null).filter(Boolean);
+  const out = arr.slice(0, 40).map((k, i) => k && typeof k === 'object' && String(k.n || '').trim() ? {c: String(k.c || 'U' + i).slice(0, 20), n: String(k.n).trim().slice(0, 40), steps: strs(k.steps, 30), parts: strs(k.parts, 80), num: !!k.num || undefined, repairs: Array.isArray(k.repairs) ? strs(k.repairs, 40) : undefined} : null).filter(Boolean);
   out.forEach(k => { if (!k.steps.length) k.steps = ['施工前', '施工後']; });
   return out.length ? out : null;
 }
