@@ -4,7 +4,7 @@
 (function(){
 'use strict';
 
-const APP_VER = '25';
+const APP_VER = '26';
 const $ = id => document.getElementById(id);
 function h(tag, props, ...kids){
   const e = document.createElement(tag);
@@ -1553,6 +1553,8 @@ async function checkUpdate(){
 }
 
 (async function start(){
+  // 画面を触った時にページごと大きくならないようにする（iPhone の Safari の2回たたく・2本指の拡大）。写真の拡大・カメラの拡大はこのページの中の仕組みなので、そのまま使える
+  ['gesturestart', 'gesturechange'].forEach(t => document.addEventListener(t, e => e.preventDefault(), {passive: false}));
   loadState();
   // リンクで来た設定（#cfg= ／ 前の #k= ・ #ks=）を入れて、リンクの後ろは消しておく（開き直すたびに入れ直さない）
   if (/[#&](cfg|k|ks)=/.test(location.hash)) {

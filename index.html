@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#1f5a3a">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
@@ -34,7 +34,7 @@
   --done:#5fc489; --todo:#e3a54a; --warn:#ff8a80; color-scheme:dark}
 *{box-sizing:border-box}
 [hidden]{display:none!important}
-html,body{margin:0}
+html,body{margin:0;touch-action:manipulation}
 body{background:var(--bg);color:var(--fg);font-family:var(--font);font-size:16px;line-height:1.5;-webkit-text-size-adjust:100%;padding-top:env(safe-area-inset-top,0px)}
 body.lock{overflow:hidden}
 button{font:inherit;color:inherit}
@@ -611,6 +611,6 @@ details summary{cursor:pointer;font-size:14px;color:var(--muted);min-height:40px
 <div class="busy" id="busy" hidden>少し待ってください…</div>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
-<script src="app.js?v=25"></script>
+<script src="app.js?v=26"></script>
 </body>
 </html>
