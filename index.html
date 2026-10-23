@@ -42,7 +42,7 @@ input[type=text],textarea{font:inherit;font-size:17px;color:var(--fg);background
 textarea{min-height:120px}
 .wrap{max-width:680px;margin:0 auto;padding:10px 16px 190px;display:flex;flex-direction:column;gap:14px}
 .top{display:flex;align-items:center;gap:8px}
-.top h1{font-size:22px;margin:0;flex:1}
+.top h1{font-size:22px;margin:0;flex:1;white-space:nowrap;min-width:0}
 .ver{font-size:12px;color:var(--muted);font-weight:400}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:10px;min-width:0}
 .card h2{font-size:16px;margin:0;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;flex:1}
@@ -290,6 +290,7 @@ details summary{cursor:pointer;font-size:14px;color:var(--muted);min-height:40px
 <div class="wrap" id="home">
   <header class="top">
     <h1>黒板カメラ <span class="ver" id="ver"></span></h1>
+    <button type="button" class="btn slim" id="installBtn" hidden>ホームに追加</button>
     <button type="button" class="btn slim" id="helpBtn">使い方</button>
   </header>
 
@@ -602,8 +603,9 @@ details summary{cursor:pointer;font-size:14px;color:var(--muted);min-height:40px
     </ol></section>
     <section class="card"><h2>気をつけること</h2><ol>
       <li>写真はこのスマホの中に残ります。スマホを替える・ブラウザの「履歴とデータを消す」をすると消えます。大事な写真は LINE へ送る・携帯に保存しておいてください。</li>
-      <li>ホーム画面に置くと使いやすくなります（Safari の共有ボタン → 「ホーム画面に追加」）。</li>
-      <li>iPhone は、ホーム画面の黒板カメラと Safari の黒板カメラで写真が別々に残ります。</li>
+      <li>ホーム画面に置くと使いやすくなります。iPhone：Safari の共有ボタン → 「ホーム画面に追加」。Android：上の「ホームに追加」、または Chrome の右上の「︙」→「ホーム画面に追加」（「アプリをインストール」と出る時はそれ）。</li>
+      <li>iPhone は、ホーム画面の黒板カメラと Safari の黒板カメラで写真が別々に残ります（Android は同じ写真が出ます）。</li>
+      <li>Android で「事務所へ送る」は、ファイルが「ダウンロード」に保存されます。LINE WORKS（LINE）のトークで ＋ →「ファイル」→「ダウンロード」の中のファイルを選んで送ってください。</li>
     </ol></section>
   </div></div>
 </div>
@@ -611,6 +613,6 @@ details summary{cursor:pointer;font-size:14px;color:var(--muted);min-height:40px
 <div class="busy" id="busy" hidden>少し待ってください…</div>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
-<script src="app.js?v=26"></script>
+<script src="app.js?v=27"></script>
 </body>
 </html>

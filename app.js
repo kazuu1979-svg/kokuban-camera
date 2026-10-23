@@ -4,7 +4,7 @@
 (function(){
 'use strict';
 
-const APP_VER = '26';
+const APP_VER = '27';
 const $ = id => document.getElementById(id);
 function h(tag, props, ...kids){
   const e = document.createElement(tag);
@@ -389,6 +389,10 @@ const chip = (text, on, click, cls) => h('button', {type:'button', class:'chip' 
 /* ---------- 写真の向き（横に持ったら横の写真にする） ---------- */
 let physRot = 0, motionOn = false;
 const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const isAndroid = /Android/i.test(navigator.userAgent);
+// Android の Chrome は zip を共有の画面に出せない（写真・PDF などだけ）ので、「ダウンロード」に保存して LINE WORKS の ＋ → ファイル から送ってもらう
+const ZIP_SAVED_HOW = isAndroid ? '「ダウンロード」に保存しました。LINE WORKS（LINE）のトークで ＋ →「ファイル」→「ダウンロード」の中のファイルを選んで送り、送ったら「送った印を付ける」を押してください。'
+  : '保存しました（' + (isIOS ? '「ファイル」アプリの「ダウンロード」' : 'ダウンロード') + 'に入ります）。LINE のトークで ＋ → ファイル から送り、送ったら「送った印を付ける」を押してください。';
 const norm = a => { a = ((a % 360) + 360) % 360; return a > 180 ? a - 360 : a; };
 function screenAngle(){
   if (screen.orientation && typeof screen.orientation.angle === 'number') return norm(screen.orientation.angle);
@@ -1054,7 +1058,7 @@ async function savePhotos(list, msgEl){
       setMsg(msgEl, '「画像を保存」を押していれば、写真アプリに入りました。', true);
     } else {
       download(files);
-      setMsg(msgEl, list.length + '枚を保存しました（写真のアプリの「ダウンロード」に入ります）。', true);
+      setMsg(msgEl, list.length + '枚を保存しました（写真のアプリの「ダウンロード」に入ります）。' + (isAndroid && list.length > 1 ? '「複数のファイルをダウンロード」と聞かれたら「許可」を押してください。' : ''), true);
     }
     for (const p of list) { p.saved = true; await idbPut(p); }
   } catch(e) {
@@ -1181,7 +1185,7 @@ async function makeOffice(){
       zips.push({file: new File([blob], name, {type: 'application/zip'}), ids: ps.map(p => p.id), sent: false, saved: false});
     }
     office.zips = zips;
-    setMsg($('oMsg'), 'できました。' + (zips.length > 1 ? zips.length + 'つに分かれたので、全部「送る」を押してください。' : '「送る」→ LINE → 送り先を選んで送信してください。'), true);
+    setMsg($('oMsg'), 'できました。' + (zips.length > 1 ? zips.length + 'つに分かれたので、全部「送る」を押してください。' : isAndroid ? '「送る」を押すと「ダウンロード」に保存されるので、LINE WORKS の ＋ →「ファイル」から送ってください。' : '「送る」→ LINE → 送り先を選んで送信してください。'), true);
   } catch(e) { setMsg($('oMsg'), (e && e.message) || 'ファイルを作れませんでした。', false); }
   finally { busy(false); renderOffice(); }
 }
@@ -1198,13 +1202,13 @@ async function sendZip(i){
   const files = [z.file];
   try {
     if (navigator.canShare && navigator.share && navigator.canShare({files})) { await navigator.share({files}); await markZip(i, '渡しました。'); }
-    else { download(files); z.saved = true; setMsg($('oMsg'), 'この機械では共有の画面に出せないので、保存しました。LINE のトークで ＋ → ファイル から送り、送ったら「送った印を付ける」を押してください。', true); renderOffice(); }
+    else { download(files); z.saved = true; setMsg($('oMsg'), (isAndroid ? '' : 'この機械では共有の画面に出せないので、') + ZIP_SAVED_HOW, true); renderOffice(); }
   } catch(e) { setMsg($('oMsg'), e && e.name === 'AbortError' ? 'やめました。' : '共有の画面を出せませんでした。「ファイルに保存」を押して、LINE の ＋ → ファイル から送ってください。', false); }
 }
 function saveZip(i){
   const z = office.zips && office.zips[i]; if (!z) return;
   download([z.file]); z.saved = true;
-  setMsg($('oMsg'), '保存しました（' + (isIOS ? '「ファイル」アプリの「ダウンロード」' : 'ダウンロード') + 'に入ります）。LINE のトークで ＋ → ファイル から送り、送ったら「送った印を付ける」を押してください。', true);
+  setMsg($('oMsg'), ZIP_SAVED_HOW, true);
   renderOffice();
 }
 
@@ -1555,6 +1559,16 @@ async function checkUpdate(){
 (async function start(){
   // 画面を触った時にページごと大きくならないようにする（iPhone の Safari の2回たたく・2本指の拡大）。写真の拡大・カメラの拡大はこのページの中の仕組みなので、そのまま使える
   ['gesturestart', 'gesturechange'].forEach(t => document.addEventListener(t, e => e.preventDefault(), {passive: false}));
+  // Android の Chrome は、ホーム画面に置ける時に知らせてくれる → 上に「ホーム画面に置く」を出す
+  let installEv = null;
+  window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEv = e; $('installBtn').hidden = false; });
+  window.addEventListener('appinstalled', () => { installEv = null; $('installBtn').hidden = true; toast('ホーム画面に置きました'); });
+  $('installBtn').addEventListener('click', async () => {
+    if (!installEv) return;
+    installEv.prompt();
+    try { await installEv.userChoice; } catch(e) {}
+    installEv = null; $('installBtn').hidden = true;
+  });
   loadState();
   // リンクで来た設定（#cfg= ／ 前の #k= ・ #ks=）を入れて、リンクの後ろは消しておく（開き直すたびに入れ直さない）
   if (/[#&](cfg|k|ks)=/.test(location.hash)) {
