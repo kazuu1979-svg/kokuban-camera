@@ -4,7 +4,7 @@
 (function(){
 'use strict';
 
-const APP_VER = '29';
+const APP_VER = '30';
 const $ = id => document.getElementById(id);
 function h(tag, props, ...kids){
   const e = document.createElement(tag);
@@ -44,7 +44,10 @@ const DEFAULT_KINDS = [
    repairs:['ウレタン塗膜防水 密着','ウレタン塗膜防水 通気緩衝','ウレタン塗膜防水 側溝・巾木（廊下・階段）','アスファルト防水（トーチ）','塩ビシート防水','防滑性塩ビシート貼（長尺）','改修用ドレン設置']},
   {c:'Z', n:'その他工事', steps:['施工前','施工中','施工後'], parts:[]},
   // 版28 で足した（本人 10/24）。前からある工種の番号（写真のフォルダの 01_〜08_）が変わらないよう一番下に置く
-  {c:'H', n:'産廃搬出', steps:['施工前','施工中','施工後'], parts:['廃材置場','積込み','搬出車両','アスベスト含有廃材']}
+  {c:'H', n:'産廃搬出', steps:['施工前','施工中','施工後'], parts:['廃材置場','積込み','搬出車両','アスベスト含有廃材']},
+  // 版30 で足した（本人 10/24。スカイコートヒルズ御殿山の打診調査結果報告書の劣化区分・数え方に合わせた）。番号＝区画（E-3-3＝東面・区画3・3階）
+  {c:'D', n:'打診調査', num:true, steps:['遠景','近接'], parts:['外壁タイル','曲がり・マグサ','バルコニー内壁','手摺壁','柱・梁型','共用廊下'],
+   repairs:['下地浮き','陶片浮き','下地・陶片混合浮き','クラック','目地欠損','欠損','エフロレッセンス','シーリング劣化']}
 ];
 // 補修項目ごとの工程（会社の標準の工法の順）。補修項目を選ぶと、工程はこの順になる。選んでいない時は工種の工程
 const REPAIR_STEPS = {
@@ -82,7 +85,15 @@ function itemsOf(k){
   const d = DEFAULT_KINDS.find(x => x.c === k.c);
   return (d && d.repairs) || [];
 }
-const itemLabel = k => k.num ? '補修項目' : '仕様';
+// 打診調査：項目＝劣化区分、数量を黒板に出す（浮きは枚・クラックは m・ほかは箇所＝打診調査結果表の数え方）。撮り終えても番号は進めない
+const isSurvey = k => !!k && k.c === 'D';
+const qtyUnit = r => /クラック/.test(r || '') ? 'm' : /浮き/.test(r || '') ? '枚' : '箇所';
+function qtyText(k, s){
+  if (!isSurvey(k) || !s.repair || !(s.qty > 0)) return '';
+  const u = qtyUnit(s.repair);
+  return String(u === 'm' ? Math.round(s.qty * 10) / 10 : Math.round(s.qty)) + u;
+}
+const itemLabel = k => isSurvey(k) ? '劣化区分' : k.num ? '補修項目' : '仕様';
 function stepsOf(k, repair){
   const r = repair && itemsOf(k).includes(repair) ? ((k.repSteps && k.repSteps[repair]) || REPAIR_STEPS[repair]) : null;
   return Array.isArray(r) && r.length ? r : k.steps;
@@ -94,7 +105,7 @@ const FACE_L = {'北面':'N', '南面':'S', '東面':'E', '西面':'W', '屋上'
 
 /* ---------- 状態（このスマホに覚えておく） ---------- */
 const KEY = 'kokuban-camera-v3', OLDKEY = 'kokuban-camera-v2';
-const defSel = () => ({kind:'S', face:'', floor:'', part:'', repair:'', numN:1, numOn:true, numFree:'', step:0, note:''});
+const defSel = () => ({kind:'S', face:'', floor:'', part:'', repair:'', qty:0, numN:1, numOn:true, numFree:'', step:0, note:''});
 const defBoard = () => ({style:'white', alpha:1, font:1, layout:'std', pos:{fx:1, fy:1, s:1}});
 const defState = () => ({koji:'', recent:[], sites:[], projects:{}, sel:defSel(), board:defBoard(), myParts:{}, myNotes:[],
   rotMode:'auto', filter:'all', ledHead:'工事写真', ledCover:true, ledMaker:'', shareSites:false, mkColor:'#e53935', mkTool:'circle'});
@@ -134,7 +145,7 @@ const kindsNow = () => kindsFor(st.koji);
 function kindOf(sel){ const list = kindsNow(); return list.find(k => k.c === (sel || st.sel).kind) || list[0]; }
 function fixSel(){
   const k = kindOf();
-  if (st.sel.kind !== k.c) { st.sel.kind = k.c; st.sel.step = 0; st.sel.part = ''; st.sel.repair = ''; }
+  if (st.sel.kind !== k.c) { st.sel.kind = k.c; st.sel.step = 0; st.sel.part = ''; st.sel.repair = ''; st.sel.qty = 0; }
   const n = curSteps().length;
   if (st.sel.step >= n) st.sel.step = Math.max(0, n - 1);
   if (st.sel.step < 0) st.sel.step = 0;
@@ -151,7 +162,7 @@ function numOf(sel, k){
 function stamp(d){ return {date: d.getFullYear() + '.' + pad(d.getMonth() + 1) + '.' + pad(d.getDate()), time: pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds()), ts: d.getTime()}; }
 function metaNow(t, board){
   const k = kindOf(), s = st.sel;
-  return Object.assign({koji: st.koji.trim(), kc: k.c, kind: k.n, sokuten: sokutenOf(s), repair: itemsOf(k).includes(s.repair) ? s.repair : '', num: numOf(s, k),
+  return Object.assign({koji: st.koji.trim(), kc: k.c, kind: k.n, sokuten: sokutenOf(s), repair: itemsOf(k).includes(s.repair) ? s.repair : '', qty: qtyText(k, s), num: numOf(s, k),
     step: stepsOf(k, s.repair)[s.step] || '', stepIdx: s.step, bnote: (board || st.board).layout === 'note' ? (s.note || '').trim() : ''}, t || stamp(new Date()));
 }
 const groupKey = r => [r.kc, r.sokuten || '', r.repair || '', r.num || ''].join('|');
@@ -159,13 +170,13 @@ function curKey(){ const m = metaNow(); return groupKey(m); }
 function doneSteps(key, koji){ const s = new Set(); photos.forEach(p => { if (p.koji === koji && groupKey(p) === key) s.add(p.step); }); return s; }
 function selFromRec(rec){
   const o = rec.sel || {};
-  const s = Object.assign(defSel(), {kind: rec.kc, face: o.face || '', floor: o.floor || '', part: (o.partFree || '').trim() || o.part || '', repair: rec.repair || '',
+  const s = Object.assign(defSel(), {kind: rec.kc, face: o.face || '', floor: o.floor || '', part: (o.partFree || '').trim() || o.part || '', repair: rec.repair || '', qty: o.qty || 0,
     numN: o.numN || 1, numOn: o.numOn !== undefined ? o.numOn : !!rec.num, numFree: o.numFree !== undefined ? o.numFree : (o.num || ''), step: rec.stepIdx || 0, note: rec.bnote || ''});
   if (rec.num && o.numN === undefined && o.numFree === undefined) s.numFree = rec.num;   // 版11 までの写真
   return s;
 }
 const recBoard = rec => rec.board ? Object.assign(defBoard(), rec.board) : Object.assign(defBoard(), {style: rec.style === 'green' ? 'green' : 'white', pos: rec.pos || {fx:1, fy:1, s:1}});
-const recMeta = rec => ({koji: rec.koji, kind: rec.kind, sokuten: rec.sokuten, num: rec.num, repair: rec.repair, step: rec.step, bnote: rec.bnote || '', date: rec.date, time: rec.time});
+const recMeta = rec => ({koji: rec.koji, kind: rec.kind, sokuten: rec.sokuten, num: rec.num, repair: rec.repair, qty: rec.qty || '', step: rec.step, bnote: rec.bnote || '', date: rec.date, time: rec.time});
 
 /* ---------- 黒板を描く ---------- */
 const FONT = '"BIZ UDPGothic","Hiragino Sans","Hiragino Kaku Gothic ProN","Yu Gothic","Meiryo","Noto Sans JP",sans-serif';
@@ -212,7 +223,7 @@ function drawBoard(ctx, W, H, m, b){
   const by = y + rowH * rows.length, bh2 = bh - rowH * rows.length, tw = bw - 32 * u, cx = x + bw / 2;
   const lines = [];
   if (m.num) lines.push([m.num, 46 * u * fs, 700]);
-  if (m.repair) lines.push([m.repair, 40 * u * fs, 400]);
+  if (m.repair) lines.push([m.repair + (m.qty ? '　' + m.qty : ''), 40 * u * fs, 400]);
   lines.push([m.step || '', (lines.length ? L.step * 0.78 : L.step) * u * fs, 700]);
   ctx.textAlign = 'center';
   let sizes = lines.map(l => fit(ctx, l[0], tw, l[1], l[2]));
@@ -324,7 +335,7 @@ async function fileToBase(file){
   if (!blob) throw new Error('写真を開けませんでした');
   return blob;
 }
-const fileName = m => [m.date, m.koji, m.kind, m.sokuten, m.num, m.repair, m.step, (m.time || '').replace(/:/g, '')].filter(Boolean).map(safe).join('_') + '.jpg';
+const fileName = m => [m.date, m.koji, m.kind, m.sokuten, m.num, m.repair, m.qty, m.step, (m.time || '').replace(/:/g, '')].filter(Boolean).map(safe).join('_') + '.jpg';
 // 黒板の無い写真＋黒板＋書き込み → 黒板入りの写真と小さい写真
 async function composeBlobs(baseCv, meta, board, marks){
   const W = baseCv.width, H = baseCv.height;
@@ -360,6 +371,7 @@ function learnSel(){
 function advanceStep(){
   const k = kindOf();
   if (st.sel.step < curSteps().length - 1) st.sel.step++;
+  else if (isSurvey(k)) { st.sel.step = 0; st.sel.qty = 0; toast('近接まで撮ったので、遠景に戻しました（測点はそのまま・数量は空に）'); }
   else if (k.num && !(st.sel.numFree || '').trim() && st.sel.numOn) { st.sel.numN = (st.sel.numN || 1) + 1; st.sel.step = 0; toast('施工後まで撮ったので、番号を ' + st.sel.numN + ' に進めました'); }
 }
 
@@ -599,7 +611,7 @@ function updateCamInfo(){
   $('cvKind').textContent = k.n;
   const ks = kindsNow(), ki = ks.findIndex(x => x.c === k.c);
   $('kindPrev').disabled = ki <= 0; $('kindNext').disabled = ki >= ks.length - 1;
-  const pos = [sk, num, itemsOf(k).includes(s.repair) ? s.repair : ''].filter(Boolean).join('　');
+  const pos = [sk, num, itemsOf(k).includes(s.repair) ? s.repair : '', qtyText(k, s)].filter(Boolean).join('　');
   $('cvPos').textContent = pos || '選んでいません（押して選ぶ）';
   $('cvPos').classList.toggle('none', !pos);
   const byNum = posByNum(k, s), fi = FLOORS.indexOf(s.floor);
@@ -650,7 +662,7 @@ function updateCamInfo(){
 function kindMove(d){
   const ks = kindsNow(), i = ks.findIndex(x => x.c === st.sel.kind), n = i + d;
   if (i < 0 || n < 0 || n >= ks.length) return;
-  Object.assign(st.sel, {kind: ks[n].c, part: '', repair: '', numFree: '', step: 0});
+  Object.assign(st.sel, {kind: ks[n].c, part: '', repair: '', qty: 0, numFree: '', step: 0});
   changed();
 }
 // 測点の ◀ ▶：番号を振る工種は番号を1つずつ、ほかは階を1つずつ
@@ -687,7 +699,7 @@ const PICK = {
   kind(p){
     return [
       h('div', {class:'kinds'}, kindsNow().map(k => chip(k.n, k.c === st.sel.kind, () => {
-        if (st.sel.kind !== k.c) Object.assign(st.sel, {kind: k.c, part: '', repair: '', numFree: '', step: 0});
+        if (st.sel.kind !== k.c) Object.assign(st.sel, {kind: k.c, part: '', repair: '', qty: 0, numFree: '', step: 0});
         p.tab = 'pos'; changed();
       }))),
       h('p', {class:'note', text:'工種を足す・名前を変える・並べ替えるのは、はじめの画面の「工種・部位」から。'})
@@ -712,8 +724,20 @@ const PICK = {
       h('div', {class:'inrow'}, inp, mic), micNote
     ];
     const items = itemsOf(k);
-    if (items.length) out.push(secth(itemLabel(k)), row(items, s.repair, v => { if (v !== s.repair) s.step = 0; s.repair = v; }),
-      h('p', {class:'note', text: itemLabel(k) + 'を選ぶと、工程がその' + (k.num ? '補修' : '仕様') + 'の順に変わります。'}));
+    if (items.length) out.push(secth(itemLabel(k)), row(items, s.repair, v => { if (v !== s.repair) { s.step = 0; s.qty = 0; } s.repair = v; }),
+      h('p', {class:'note', text: isSurvey(k) ? '劣化区分と数量が黒板に出ます。' : itemLabel(k) + 'を選ぶと、工程がその' + (k.num ? '補修' : '仕様') + 'の順に変わります。'}));
+    if (isSurvey(k) && s.repair) {
+      const u = qtyUnit(s.repair), big = u === 'm' ? 1 : 10, small = u === 'm' ? 0.1 : 1;
+      const add = d => { s.qty = Math.max(0, Math.round(((s.qty || 0) + d) * 10) / 10); changed(); };
+      const nb = (t, d, label) => h('button', {type:'button', class:'nb w', 'aria-label': label, text: t, on:{click: () => add(d)}});
+      out.push(secth('数量（黒板に出ます）'),
+        h('div', {class:'numrow qty'},
+          nb('－' + big, -big, big + u + '減らす'), nb('－' + small, -small, small + u + '減らす'),
+          h('b', {class:'numview', text: qtyText(k, s) || 'なし'}),
+          nb('＋' + small, small, small + u + '増やす'), nb('＋' + big, big, big + u + '増やす'),
+          chip('なし', !(s.qty > 0), () => { s.qty = 0; changed(); }, 'small')),
+        h('p', {class:'note', text:'浮きは枚、クラックは m、ほかは箇所で数えます（打診調査結果表と同じ）。曲がり・マグサのタイルは数えたままの枚数を入れてください。'}));
+    }
     if (k.num) {
       out.push(secth('番号'),
         h('div', {class:'numrow'},
@@ -721,7 +745,8 @@ const PICK = {
           h('b', {class:'numview', text: numOf(s, k) || '番号なし'}),
           h('button', {type:'button', class:'nb', 'aria-label':'番号を1つ進める', text:'＋', on:{click: () => { s.numFree = ''; s.numOn = true; s.numN = (s.numN || 1) + 1; changed(); }}}),
           chip('番号なし', !s.numOn && !(s.numFree || '').trim(), () => { s.numFree = ''; s.numOn = !s.numOn; changed(); }, 'small')),
-        h('p', {class:'note', text:'面と階は上で選んだ物から自動で入ります（南面・5階・3番 → S-3-5）。施工後まで撮ると、番号が1つ進んで施工前に戻ります。'}),
+        h('p', {class:'note', text: isSurvey(k) ? '番号＝区画です。面と階は上で選んだ物から自動で入ります（東面・3階・区画3 → E-3-3）。近接まで撮ると遠景に戻り、区画はそのままです（区画を変える時は ＋－）。'
+          : '面と階は上で選んだ物から自動で入ります（南面・5階・3番 → S-3-5）。施工後まで撮ると、番号が1つ進んで施工前に戻ります。'}),
         h('details', {}, h('summary', {text:'番号を手で入れる'}),
           h('input', {type:'text', autocomplete:'off', placeholder:'例 S-1-5（入れると上の番号より優先）', value: s.numFree || '',
             on:{input: e => { s.numFree = e.target.value; changed({keepPicker: true}); }, change: () => changed()}})));
@@ -966,7 +991,7 @@ function renderHome(){
     const done = new Set(allInGroup.map(p => p.step));
     const steps = k ? stepsOf(k, p0.repair) : [...done];
     const nextIdx = steps.findIndex(s => !done.has(s));
-    const head = h('div', {class:'ghead'}, h('b', {text: [p0.sokuten || '（測点なし）', p0.num, p0.repair].filter(Boolean).join(' ')}), h('span', {class:'cnt', text: allInGroup.length + '枚'}));
+    const head = h('div', {class:'ghead'}, h('b', {text: [p0.sokuten || '（測点なし）', p0.num, p0.repair, p0.qty].filter(Boolean).join(' ')}), h('span', {class:'cnt', text: allInGroup.length + '枚'}));
     if (k && nextIdx >= 0 && !selecting) head.append(h('button', {type:'button', class:'btn slim primary', text:'続きを撮る（' + steps[nextIdx] + '）', on:{click: () => {
       const last = allInGroup.slice().sort((a, b) => b.ts - a.ts)[0];
       st.sel = selFromRec(last); st.sel.step = nextIdx; save(); openCamera();
@@ -1018,7 +1043,7 @@ function drawPhoto(){
   $('phTitle').textContent = rec.step + '　' + (rec.sokuten || '');
   $('phPos').textContent = (ph.i + 1) + ' / ' + ph.list.length;
   $('phPrev').disabled = ph.i <= 0; $('phNext').disabled = ph.i >= ph.list.length - 1;
-  const rows = [['工事名', rec.koji], ['工種', rec.kind], ['測点', [rec.sokuten, rec.num, rec.repair].filter(Boolean).join(' ')], ['工程', rec.step], ['撮影', rec.date + ' ' + (rec.time || '').slice(0, 5)]];
+  const rows = [['工事名', rec.koji], ['工種', rec.kind], ['測点', [rec.sokuten, rec.num, rec.repair, rec.qty].filter(Boolean).join(' ')], ['工程', rec.step], ['撮影', rec.date + ' ' + (rec.time || '').slice(0, 5)]];
   if (rec.bnote) rows.push(['黒板の備考', rec.bnote]);
   put($('phMeta'), ...rows.filter(r => r[1]).flatMap(([a, b]) => [h('dt', {text: a}), h('dd', {text: b})]));
   put($('phBadges'), h('span', {class:'badge' + (rec.sent ? ' on' : ''), text: rec.sent ? '送った' : 'まだ送っていない'}), h('span', {class:'badge' + (rec.saved ? ' on' : ''), text: rec.saved ? '携帯に保存した' : '携帯に保存していない'}),
@@ -1169,18 +1194,18 @@ async function makeOffice(){
         const ki = kindIndex(p.kc, koji);
         const kindDir = (ki < 999 ? pad(ki + 1) : '99') + '_' + (safe(p.kind) || 'その他');
         const stepTag = pad((p.stepIdx || 0) + 1) + '.' + safe(p.step);
-        const base = [p.sokuten, p.num, p.repair].filter(Boolean).map(safe).concat(stepTag, (p.date || '').replace(/\./g, '') + '-' + (p.time || '').replace(/:/g, '')).filter(Boolean).join('_');
+        const base = [p.sokuten, p.num, p.repair, p.qty].filter(Boolean).map(safe).concat(stepTag, (p.date || '').replace(/\./g, '') + '-' + (p.time || '').replace(/:/g, '')).filter(Boolean).join('_');
         let file = '写真/' + kindDir + '/' + base + '.jpg', n = 2;
         while (used.has(file)) file = '写真/' + kindDir + '/' + base + '_' + (n++) + '.jpg';
         used.add(file);
         items.push({p, file, kindDir, no: i + 1});
       });
-      const head = ['No', '工事名', '工種', '測点', '番号', '補修', '工程', '撮影日', '時刻', '備考', '黒板の備考', '書き込み', 'ファイル'];
-      const csv = '﻿' + [head].concat(items.map(({p, file, no}) => [no, p.koji, p.kind, p.sokuten, p.num, p.repair, p.step, p.date, p.time, p.note, p.bnote, (p.marks && p.marks.length) ? 'あり' : '', file.replace(/\//g, '\\')]))
+      const head = ['No', '工事名', '工種', '測点', '番号', '補修', '数量', '工程', '撮影日', '時刻', '備考', '黒板の備考', '書き込み', 'ファイル'];
+      const csv = '﻿' + [head].concat(items.map(({p, file, no}) => [no, p.koji, p.kind, p.sokuten, p.num, p.repair, p.qty || '', p.step, p.date, p.time, p.note, p.bnote, (p.marks && p.marks.length) ? 'あり' : '', file.replace(/\//g, '\\')]))
         .map(r => r.map(csvCell).join(',')).join('\r\n') + '\r\n';
       const meta = {app: '黒板カメラ', format: 1, ver: APP_VER, koji, made: made.toISOString(), part: g + 1, parts: groups.length,
         kinds: kinds.map((k, i) => ({c: k.c, n: k.n, order: i + 1, steps: k.steps, repSteps: itemsOf(k).length ? Object.fromEntries(itemsOf(k).map(r => [r, stepsOf(k, r)])) : undefined})),
-        photos: items.map(({p, file, kindDir}) => ({id: p.id, rev: p.rev || 1, file, kindDir, kc: p.kc, kind: p.kind, sokuten: p.sokuten || '', num: p.num || '', repair: p.repair || '',
+        photos: items.map(({p, file, kindDir}) => ({id: p.id, rev: p.rev || 1, file, kindDir, kc: p.kc, kind: p.kind, sokuten: p.sokuten || '', num: p.num || '', repair: p.repair || '', qty: p.qty || '',
           step: p.step || '', stepIdx: p.stepIdx || 0, date: p.date, time: p.time, ts: p.ts, note: p.note || '', bnote: p.bnote || '', marks: (p.marks || []).length}))};
       const entries = items.map(({p, file}) => ({name: file, data: p.blob, ts: p.ts}));
       entries.push({name: '一覧.csv', data: csv, ts: made.getTime()}, {name: '黒板カメラ.json', data: JSON.stringify(meta, null, 1), ts: made.getTime()});
