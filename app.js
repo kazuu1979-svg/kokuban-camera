@@ -4,7 +4,7 @@
 (function(){
 'use strict';
 
-const APP_VER = '30';
+const APP_VER = '31';
 const $ = id => document.getElementById(id);
 function h(tag, props, ...kids){
   const e = document.createElement(tag);
@@ -28,6 +28,8 @@ const clamp01 = v => clamp(v, 0, 1);
 const put = (el, ...kids) => el.replaceChildren(...kids.flat(Infinity).filter(k => k !== null && k !== undefined && k !== false));
 
 /* ---------- 選ぶ物の最初の一覧（過去の工事写真から作った案。工事ごとに直せる） ---------- */
+// 打診調査は工程の代わりに階を選ぶ（版31・本人 10/24「工程の代わりに最後の数字の階数を選べるように」）。階なし＝E-1 の形
+const SURVEY_FLOORS = ['1階','2階','3階','4階','5階','6階','7階','8階','9階','10階','11階','12階','13階','14階','15階','屋上','階なし'];
 const DEFAULT_KINDS = [
   {c:'A', n:'仮設足場工事', steps:['施工前','組立中','組立完了','是正前','是正後','解体中','解体完了'], parts:['外壁足場','養生シート','朝顔','昇降階段','壁つなぎ','是正箇所']},
   {c:'W', n:'洗浄作業', steps:['施工前','洗剤塗布','高圧水洗浄','施工後'], parts:['外壁タイル','外壁','共用廊下','階段・踊り場','屋上 平場','側溝・巾木','天井'],
@@ -46,7 +48,7 @@ const DEFAULT_KINDS = [
   // 版28 で足した（本人 10/24）。前からある工種の番号（写真のフォルダの 01_〜08_）が変わらないよう一番下に置く
   {c:'H', n:'産廃搬出', steps:['施工前','施工中','施工後'], parts:['廃材置場','積込み','搬出車両','アスベスト含有廃材']},
   // 版30 で足した（本人 10/24。スカイコートヒルズ御殿山の打診調査結果報告書の劣化区分・数え方に合わせた）。番号＝区画（E-3-3＝東面・区画3・3階）
-  {c:'D', n:'打診調査', num:true, steps:['遠景','近接'], parts:['外壁タイル','曲がり・マグサ','バルコニー内壁','手摺壁','柱・梁型','共用廊下'],
+  {c:'D', n:'打診調査', num:true, steps:SURVEY_FLOORS, parts:['外壁タイル','曲がり・マグサ','バルコニー内壁','手摺壁','柱・梁型','共用廊下'],
    repairs:['下地浮き','陶片浮き','下地・陶片混合浮き','クラック','目地欠損','欠損','エフロレッセンス','シーリング劣化']}
 ];
 // 補修項目ごとの工程（会社の標準の工法の順）。補修項目を選ぶと、工程はこの順になる。選んでいない時は工種の工程
@@ -85,7 +87,7 @@ function itemsOf(k){
   const d = DEFAULT_KINDS.find(x => x.c === k.c);
   return (d && d.repairs) || [];
 }
-// 打診調査：項目＝劣化区分、数量を黒板に出す（浮きは枚・クラックは m・ほかは箇所＝打診調査結果表の数え方）。撮り終えても番号は進めない
+// 打診調査：項目＝劣化区分、数量を黒板に出す（浮きは枚・クラックは m・ほかは箇所＝打診調査結果表の数え方）。工程の段で階を選び、撮っても階・番号は進めない
 const isSurvey = k => !!k && k.c === 'D';
 const qtyUnit = r => /クラック/.test(r || '') ? 'm' : /浮き/.test(r || '') ? '枚' : '箇所';
 function qtyText(k, s){
@@ -95,6 +97,7 @@ function qtyText(k, s){
 }
 const itemLabel = k => isSurvey(k) ? '劣化区分' : k.num ? '補修項目' : '仕様';
 function stepsOf(k, repair){
+  if (isSurvey(k)) return SURVEY_FLOORS;
   const r = repair && itemsOf(k).includes(repair) ? ((k.repSteps && k.repSteps[repair]) || REPAIR_STEPS[repair]) : null;
   return Array.isArray(r) && r.length ? r : k.steps;
 }
@@ -149,6 +152,14 @@ function fixSel(){
   const n = curSteps().length;
   if (st.sel.step >= n) st.sel.step = Math.max(0, n - 1);
   if (st.sel.step < 0) st.sel.step = 0;
+  if (isSurvey(k)) { const f = SURVEY_FLOORS[st.sel.step]; st.sel.floor = f === '階なし' ? '' : f; }
+}
+// 工種を変えた時の最初の工程（打診調査は今の階のまま）
+function firstStep(c){
+  const k = kindsNow().find(x => x.c === c);
+  if (!isSurvey(k)) return 0;
+  const i = SURVEY_FLOORS.indexOf(st.sel.floor || '階なし');
+  return i < 0 ? 0 : i;
 }
 const sokutenOf = sel => [sel.face, sel.floor, (sel.part || '').trim()].filter(Boolean).join(' ');
 function numOf(sel, k){
@@ -176,7 +187,7 @@ function selFromRec(rec){
   return s;
 }
 const recBoard = rec => rec.board ? Object.assign(defBoard(), rec.board) : Object.assign(defBoard(), {style: rec.style === 'green' ? 'green' : 'white', pos: rec.pos || {fx:1, fy:1, s:1}});
-const recMeta = rec => ({koji: rec.koji, kind: rec.kind, sokuten: rec.sokuten, num: rec.num, repair: rec.repair, qty: rec.qty || '', step: rec.step, bnote: rec.bnote || '', date: rec.date, time: rec.time});
+const recMeta = rec => ({koji: rec.koji, kc: rec.kc, kind: rec.kind, sokuten: rec.sokuten, num: rec.num, repair: rec.repair, qty: rec.qty || '', step: rec.step, bnote: rec.bnote || '', date: rec.date, time: rec.time});
 
 /* ---------- 黒板を描く ---------- */
 const FONT = '"BIZ UDPGothic","Hiragino Sans","Hiragino Kaku Gothic ProN","Yu Gothic","Meiryo","Noto Sans JP",sans-serif';
@@ -222,9 +233,15 @@ function drawBoard(ctx, W, H, m, b){
   ctx.beginPath(); ctx.moveTo(x + labW, y); ctx.lineTo(x + labW, y + rowH * rows.length); ctx.stroke();
   const by = y + rowH * rows.length, bh2 = bh - rowH * rows.length, tw = bw - 32 * u, cx = x + bw / 2;
   const lines = [];
-  if (m.num) lines.push([m.num, 46 * u * fs, 700]);
-  if (m.repair) lines.push([m.repair + (m.qty ? '　' + m.qty : ''), 40 * u * fs, 400]);
-  lines.push([m.step || '', (lines.length ? L.step * 0.78 : L.step) * u * fs, 700]);
+  if (m.kc === 'D') {
+    // 打診調査：番号（区画-階）と劣化区分・数量を大きく。階は番号と測点に出るので工程の行は無し
+    if (m.num) lines.push([m.num, L.step * 0.7 * u * fs, 700]);
+    lines.push([(m.repair || '') + (m.qty ? '　' + m.qty : ''), L.step * 0.7 * u * fs, 700]);
+  } else {
+    if (m.num) lines.push([m.num, 46 * u * fs, 700]);
+    if (m.repair) lines.push([m.repair + (m.qty ? '　' + m.qty : ''), 40 * u * fs, 400]);
+    lines.push([m.step || '', (lines.length ? L.step * 0.78 : L.step) * u * fs, 700]);
+  }
   ctx.textAlign = 'center';
   let sizes = lines.map(l => fit(ctx, l[0], tw, l[1], l[2]));
   const avail = bh2 - 24 * u;
@@ -370,8 +387,8 @@ function learnSel(){
 }
 function advanceStep(){
   const k = kindOf();
+  if (isSurvey(k)) return;   // 打診調査は同じ階・区画のまま続けて撮る
   if (st.sel.step < curSteps().length - 1) st.sel.step++;
-  else if (isSurvey(k)) { st.sel.step = 0; st.sel.qty = 0; toast('近接まで撮ったので、遠景に戻しました（測点はそのまま・数量は空に）'); }
   else if (k.num && !(st.sel.numFree || '').trim() && st.sel.numOn) { st.sel.numN = (st.sel.numN || 1) + 1; st.sel.step = 0; toast('施工後まで撮ったので、番号を ' + st.sel.numN + ' に進めました'); }
 }
 
@@ -618,7 +635,9 @@ function updateCamInfo(){
   $('cvPosL').textContent = '測点 ›　◀▶ ' + (byNum ? '番号' : '階');
   $('posPrev').disabled = byNum ? (s.numN || 1) <= 1 : fi <= 0;
   $('posNext').disabled = !byNum && fi >= FLOORS.length - 1;
-  const steps = curSteps();
+  const steps = curSteps(), sv = isSurvey(k);
+  $('rowStep').querySelector('.cl').textContent = sv ? '階' : '工程';
+  $('stepPrev').setAttribute('aria-label', sv ? '下の階' : '前の工程'); $('stepNext').setAttribute('aria-label', sv ? '上の階' : '次の工程');
   $('cvStep').textContent = steps[s.step] || '（工程なし）';
   const done = doneSteps(curKey(), st.koji.trim());
   $('cvStepN').textContent = (s.step + 1) + '/' + steps.length + (done.has(steps[s.step]) ? '　✓撮った' : '');
@@ -662,7 +681,7 @@ function updateCamInfo(){
 function kindMove(d){
   const ks = kindsNow(), i = ks.findIndex(x => x.c === st.sel.kind), n = i + d;
   if (i < 0 || n < 0 || n >= ks.length) return;
-  Object.assign(st.sel, {kind: ks[n].c, part: '', repair: '', qty: 0, numFree: '', step: 0});
+  Object.assign(st.sel, {kind: ks[n].c, part: '', repair: '', qty: 0, numFree: '', step: firstStep(ks[n].c)});
   changed();
 }
 // 測点の ◀ ▶：番号を振る工種は番号を1つずつ、ほかは階を1つずつ
@@ -689,7 +708,7 @@ function changed(opts){
   }
 }
 function renderPicker(p){
-  $(p.tabs).replaceChildren(...TABS.map(([id, label]) => h('button', {type:'button', class:'tab', role:'tab', 'aria-selected': p.tab === id, text: label,
+  $(p.tabs).replaceChildren(...TABS.map(([id, label]) => h('button', {type:'button', class:'tab', role:'tab', 'aria-selected': p.tab === id, text: id === 'step' && isSurvey(kindOf()) ? '階' : label,
     on:{click: () => { p.tab = id; renderPicker(p); const sc = p === picker.cam ? $('camPick') : $('edPick').parentElement; sc.scrollTop = 0; }}})));
   const body = $(p.body);
   put(body, ...(PICK[p.tab] || PICK.kind)(p));
@@ -699,7 +718,7 @@ const PICK = {
   kind(p){
     return [
       h('div', {class:'kinds'}, kindsNow().map(k => chip(k.n, k.c === st.sel.kind, () => {
-        if (st.sel.kind !== k.c) Object.assign(st.sel, {kind: k.c, part: '', repair: '', qty: 0, numFree: '', step: 0});
+        if (st.sel.kind !== k.c) Object.assign(st.sel, {kind: k.c, part: '', repair: '', qty: 0, numFree: '', step: firstStep(k.c)});
         p.tab = 'pos'; changed();
       }))),
       h('p', {class:'note', text:'工種を足す・名前を変える・並べ替えるのは、はじめの画面の「工種・部位」から。'})
@@ -719,12 +738,13 @@ const PICK = {
     const micNote = h('p', {class:'note', hidden: true});
     const out = [
       secth('面'), row(FACES, s.face, v => s.face = v),
-      secth('階'), row(FLOORS, s.floor, v => s.floor = v, true),
+      secth('階'), isSurvey(k) ? row(SURVEY_FLOORS, SURVEY_FLOORS[s.step], v => { if (v) s.step = SURVEY_FLOORS.indexOf(v); }, true)
+        : row(FLOORS, s.floor, v => s.floor = v, true),
       secth('部位'), parts.length ? row(parts, s.part, v => s.part = v, false, mine) : null,
       h('div', {class:'inrow'}, inp, mic), micNote
     ];
     const items = itemsOf(k);
-    if (items.length) out.push(secth(itemLabel(k)), row(items, s.repair, v => { if (v !== s.repair) { s.step = 0; s.qty = 0; } s.repair = v; }),
+    if (items.length) out.push(secth(itemLabel(k)), row(items, s.repair, v => { if (v !== s.repair) { if (!isSurvey(k)) s.step = 0; s.qty = 0; } s.repair = v; }),
       h('p', {class:'note', text: isSurvey(k) ? '劣化区分と数量が黒板に出ます。' : itemLabel(k) + 'を選ぶと、工程がその' + (k.num ? '補修' : '仕様') + 'の順に変わります。'}));
     if (isSurvey(k) && s.repair) {
       const u = qtyUnit(s.repair), big = u === 'm' ? 1 : 10, small = u === 'm' ? 0.1 : 1;
@@ -745,7 +765,7 @@ const PICK = {
           h('b', {class:'numview', text: numOf(s, k) || '番号なし'}),
           h('button', {type:'button', class:'nb', 'aria-label':'番号を1つ進める', text:'＋', on:{click: () => { s.numFree = ''; s.numOn = true; s.numN = (s.numN || 1) + 1; changed(); }}}),
           chip('番号なし', !s.numOn && !(s.numFree || '').trim(), () => { s.numFree = ''; s.numOn = !s.numOn; changed(); }, 'small')),
-        h('p', {class:'note', text: isSurvey(k) ? '番号＝区画です。面と階は上で選んだ物から自動で入ります（東面・3階・区画3 → E-3-3）。近接まで撮ると遠景に戻り、区画はそのままです（区画を変える時は ＋－）。'
+        h('p', {class:'note', text: isSurvey(k) ? '番号＝区画です（東面・区画3・3階 → E-3-3）。カメラの下の段で、測点の ◀ ▶ は区画、階の ◀ ▶ は階を変えます。撮っても区画・階は進みません。'
           : '面と階は上で選んだ物から自動で入ります（南面・5階・3番 → S-3-5）。施工後まで撮ると、番号が1つ進んで施工前に戻ります。'}),
         h('details', {}, h('summary', {text:'番号を手で入れる'}),
           h('input', {type:'text', autocomplete:'off', placeholder:'例 S-1-5（入れると上の番号より優先）', value: s.numFree || '',
@@ -756,7 +776,7 @@ const PICK = {
   step(p){
     const k = kindOf(), done = doneSteps(curKey(), st.koji.trim());
     return [
-      h('p', {class:'note', text:'撮ると次の工程へ進みます。✓ は、この測点で撮った工程です。' + (st.sel.repair && stepsOf(k, st.sel.repair) !== k.steps ? '（「' + st.sel.repair + '」の工程）' : '')}),
+      h('p', {class:'note', text: isSurvey(k) ? '階を選びます（番号の最後の数字になります。屋上＝R、階なし＝E-1 の形）。' : '撮ると次の工程へ進みます。✓ は、この測点で撮った工程です。' + (st.sel.repair && stepsOf(k, st.sel.repair) !== k.steps ? '（「' + st.sel.repair + '」の工程）' : '')}),
       h('div', {class:'steplist'}, curSteps().map((name, i) => h('button', {type:'button', class:'chip', 'aria-pressed': i === st.sel.step,
         on:{click: () => { st.sel.step = i; changed(); if (p === picker.cam) closeSheet(); }}},
         h('span', {text: (i + 1) + '. ' + name}), done.has(name) ? h('span', {class:'ok', text:'✓ 撮った'}) : h('span', {class:'n', text:'まだ'}))))
